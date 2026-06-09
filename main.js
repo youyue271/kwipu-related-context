@@ -121,6 +121,15 @@ function formatRelatedMeta(item) {
   return meta.join(" · ");
 }
 
+function applyRelatedPreferences(items, cache) {
+  const pinned = (cache && cache.pinnedRelated) || {};
+  const ignored = (cache && cache.ignoredRelated) || {};
+  return (items || [])
+    .filter((item) => item && item.path && !ignored[item.path])
+    .map((item) => Object.assign({}, item, { pinned: Boolean(pinned[item.path]) }))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned));
+}
+
 function formatQueryMeta(result) {
   const parts = [];
   if (result && result.source === "cache") parts.push("缓存");
@@ -406,6 +415,23 @@ class RelatedContextView extends ItemView {
           text: meta,
         });
       }
+
+      const actionsEl = cardEl.createDiv({ cls: "kwipu-related-context__related-actions" });
+      const pinButton = actionsEl.createEl("button", {
+        cls: "kwipu-related-context__related-action",
+        text: item.pinned ? "取消固定" : "固定",
+      });
+      pinButton.addEventListener("click", () => this.plugin.togglePinnedRelated(item.path));
+      const insertButton = actionsEl.createEl("button", {
+        cls: "kwipu-related-context__related-action",
+        text: "插入双链",
+      });
+      insertButton.addEventListener("click", () => this.plugin.insertRelatedLink(item));
+      const ignoreButton = actionsEl.createEl("button", {
+        cls: "kwipu-related-context__related-action",
+        text: "忽略",
+      });
+      ignoreButton.addEventListener("click", () => this.plugin.ignoreRelated(item.path));
     }
   }
 
@@ -547,6 +573,8 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.cache = this.settings.cache || this.createEmptyCache();
+    this.cache.pinnedRelated = this.cache.pinnedRelated || {};
+    this.cache.ignoredRelated = this.cache.ignoredRelated || {};
     this.state = {
       status: "空闲",
       filePath: "",
@@ -634,6 +662,8 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       version: CACHE_VERSION,
       files: {},
       stats: {},
+      pinnedRelated: {},
+      ignoredRelated: {},
       indexDirty: false,
     };
   }
@@ -1073,7 +1103,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     const related = section.related && section.related.length
       ? section.related
       : (section.paths || []).map((path) => ({ path }));
-    return related.filter((item) => item && item.path);
+    return applyRelatedPreferences(related, this.cache);
   }
 
   formatRelatedLinkMarkdown(item) {
@@ -1081,10 +1111,38 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     const linkPath = this.toWikiLinkPath(item.path || "");
     return title ? `[[${linkPath}|${title}]]` : `[[${linkPath}]]`;
   }
+
+  async togglePinnedRelated(path) {
+    if (!path) return;
+    this.cache.pinnedRelated = this.cache.pinnedRelated || {};
+    if (this.cache.pinnedRelated[path]) delete this.cache.pinnedRelated[path];
+    else this.cache.pinnedRelated[path] = true;
+    await this.saveSettings();
+    this.renderViews();
+  }
+
+  async ignoreRelated(path) {
+    if (!path) return;
+    this.cache.ignoredRelated = this.cache.ignoredRelated || {};
+    this.cache.ignoredRelated[path] = true;
+    if (this.cache.pinnedRelated) delete this.cache.pinnedRelated[path];
+    await this.saveSettings();
+    this.renderViews();
+  }
+
+  async insertRelatedLink(item) {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.editor) {
+      new Notice("当前没有可插入双链的编辑器。");
+      return;
+    }
+    view.editor.replaceSelection(this.formatRelatedLinkMarkdown(item));
+  }
 };
 
 module.exports.__test = {
   applyBackendSignature,
+  applyRelatedPreferences,
   backendSignature,
   cleanResultPath,
   extractPaths,

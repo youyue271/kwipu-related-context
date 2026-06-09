@@ -133,6 +133,27 @@
   word-break: break-word;
 }
 
+.kwipu-related-context__related-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.kwipu-related-context__related-action {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.kwipu-related-context__related-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 .kwipu-related-context__empty {
   color: var(--text-muted);
   font-size: 12px;

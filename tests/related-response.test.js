@@ -36,6 +36,7 @@ function loadPluginModule() {
 const pluginModule = loadPluginModule();
 const {
   applyBackendSignature,
+  applyRelatedPreferences,
   formatBackendStatus,
   formatQueryMeta,
   formatRelatedMeta,
@@ -78,6 +79,18 @@ assert.strictEqual(formatRelatedMeta({
   score: 0.91,
   source: "vector",
 }), "相关度 0.91 · 来源：vector · 03 collection/Law/犯罪构成.md");
+
+assert.deepStrictEqual(JSON.parse(JSON.stringify(applyRelatedPreferences([
+  { path: "b.md", title: "B" },
+  { path: "a.md", title: "A" },
+  { path: "c.md", title: "C" },
+], {
+  pinnedRelated: { "a.md": true },
+  ignoredRelated: { "c.md": true },
+}))), [
+  { path: "a.md", title: "A", pinned: true },
+  { path: "b.md", title: "B", pinned: false },
+]);
 
 const fallback = normalizeRelatedResponse({
   answer: "- [犯罪构成](03%20collection/Law/犯罪构成.md)\n- [[Law/责任]]",
