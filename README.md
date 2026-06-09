@@ -10,55 +10,179 @@
 - `main.js`：可直接运行的插件入口。
 - `styles.css`：右侧栏样式。
 - `package.json`：基础元信息和 `node --check` 检查命令。
+- `.env.example`：Kwipu、vault、storage 和模型配置模板。
+- `scripts/`：Windows 侧启动、健康检查、安装和更新脚本。
 
-本地 HTTP bridge 位于 Kwipu 主项目的 `kwipu_http_server.py`。
+本地 HTTP bridge 位于 Kwipu 主项目的 `kwipu_http_server.py`。本仓库暂时不复制后端实现，只提供脚本启动主项目里的后端入口，避免两份后端脚本版本漂移。
 
 插件目前只支持桌面端，因为它调用本机地址 `http://127.0.0.1:8765`。
 
-## 启动 Kwipu HTTP 服务
+## 完整安装流程
 
-打开 Obsidian 前，先在 Windows 侧启动 HTTP 服务：
+以下命令都在 Windows PowerShell 中运行。
+
+### 1. 准备 Ollama 模型
+
+确认本机 Ollama 能看到需要的模型：
 
 ```powershell
-cd D:\project\Kwipu
+ollama list
+```
 
-$env:KWIPU_OLLAMA_HTTP = "1"
-$env:KWIPU_VERBOSE = "1"
-$env:KWIPU_NUM_CTX = "32768"
-$env:KWIPU_GRAPH_PATH_DEPTH = "1"
-$env:KWIPU_EMBED_BATCH_SIZE = "1"
-$env:KWIPU_EMBED_MAX_CHARS = "4000"
-$env:KWIPU_KNOWLEDGE_DIR = "D:\repo"
-$env:KWIPU_STORAGE_DIR = "D:\repo\00 rag storage"
-$env:KWIPU_EXCLUDE_DIRS = "00 rag storage;.obsidian;.git;node_modules"
-$env:KWIPU_EXCLUDE_DIR_PREFIXES = "00;01;02"
+推荐配置：
 
-python kwipu_http_server.py --llm-model qwen3.6:35b-a3b-q4_K_M --embed-model bge-m3:567m
+```text
+LLM: qwen3.6:35b-a3b-q4_K_M
+Embedding: bge-m3:567m
+```
+
+如果缺少 embedding 模型：
+
+```powershell
+ollama pull bge-m3:567m
+```
+
+### 2. 复制配置
+
+进入插件仓库，复制 `.env.example` 为 `.env`：
+
+```powershell
+cd D:\project\Kwipu\obsidian-related-context
+Copy-Item .env.example .env
+notepad .env
+```
+
+按你的机器修改这些值：
+
+```text
+KWIPU_PROJECT_DIR=D:\project\Kwipu
+KWIPU_KNOWLEDGE_DIR=D:\repo
+KWIPU_STORAGE_DIR=D:\repo\00 rag storage
+KWIPU_LLM_MODEL=qwen3.6:35b-a3b-q4_K_M
+KWIPU_EMBED_MODEL=bge-m3:567m
+```
+
+`KWIPU_KNOWLEDGE_DIR` 是 Obsidian vault。`KWIPU_STORAGE_DIR` 是 Kwipu RAG storage，推荐放在 vault 下并加入排除目录，例如 `D:\repo\00 rag storage`，这样多设备同步时 storage 路径相对稳定，但插件不会把缓存写进普通笔记。
+
+### 3. 首次建库
+
+如果 `KWIPU_STORAGE_DIR` 还没有建好，首次启动 HTTP 服务时 Kwipu 会读取 vault 并创建索引。这个过程会调用 embedding 和 LLM，耗时取决于文件数量、模型上下文和显卡负载。
+
+默认排除：
+
+```text
+00 rag storage;.obsidian;.git;node_modules
+00;01;02 开头的目录
+```
+
+目前 Kwipu 侧建议只索引 Markdown 文件。
+
+### 4. 启动 HTTP 服务
+
+打开 Obsidian 前，先在 Windows 侧启动本地 HTTP 服务：
+
+```powershell
+cd D:\project\Kwipu\obsidian-related-context
+.\scripts\start-kwipu-server.ps1
 ```
 
 健康检查：
 
 ```powershell
-curl http://127.0.0.1:8765/health
+cd D:\project\Kwipu\obsidian-related-context
+.\scripts\check-kwipu-health.ps1
 ```
 
-## 安装到 Obsidian
+健康检查会请求 `/health`，并显示后端当前的 knowledge、storage、LLM 和 embedding 模型。
 
-把本目录复制或软链接到 vault 的插件目录：
+### 5. 安装或更新 Obsidian 插件
+
+首次安装：
+
+```powershell
+cd D:\project\Kwipu\obsidian-related-context
+.\scripts\install-plugin.ps1
+```
+
+后续更新：
+
+```powershell
+cd D:\project\Kwipu\obsidian-related-context
+.\scripts\update-plugin.ps1
+```
+
+脚本会复制插件文件到：
 
 ```text
 D:\repo\.obsidian\plugins\kwipu-related-context
 ```
 
-目录中至少需要包含：
+复制内容包括：
 
 ```text
 manifest.json
 main.js
 styles.css
+README.md
+TODO.md
+scripts/
 ```
 
-然后在 Obsidian 社区插件设置中启用 `Kwipu 相关上下文`。
+如果目标目录中已有 `data.json`，安装和更新脚本都会保留它。`data.json` 是 Obsidian 插件设置和缓存，不会被覆盖。
+
+### 6. 在 Obsidian 中启用
+
+1. 打开 Obsidian。
+2. 进入设置，关闭安全模式或启用社区插件。
+3. 启用 `Kwipu 相关上下文`。
+4. 执行命令 `打开 Kwipu 相关上下文`，或在右侧栏打开插件视图。
+5. 打开一篇 Markdown 笔记，把光标放在要查询的段落。
+
+插件只会查询当前光标所在段落。
+
+## 最小测试流程
+
+先确认后端在线：
+
+```powershell
+cd D:\project\Kwipu\obsidian-related-context
+.\scripts\check-kwipu-health.ps1
+```
+
+再直接请求 `/related`：
+
+```powershell
+$body = @{
+  filePath = "test.md"
+  sectionId = "manual-test"
+  sectionText = "刑法中的犯罪构成通常包括客观要件、主观要件、违法性和责任判断。"
+  topK = 3
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:8765/related" `
+  -ContentType "application/json; charset=utf-8" `
+  -Body $body |
+  ConvertTo-Json -Depth 8
+```
+
+期望返回：
+
+```json
+{
+  "ok": true,
+  "answer": "中文解释...",
+  "related": [
+    {
+      "path": "03 collection/Law/犯罪构成.md",
+      "reason": "中文相关原因"
+    }
+  ]
+}
+```
+
+最后在 Obsidian 中打开右侧栏，光标放到同类段落上，确认能看到 Markdown 回答和 `[[相关笔记]]` 双链卡片。
 
 ## 使用方式
 
@@ -166,6 +290,46 @@ Kwipu 相关上下文
 - `00`、`01`、`02` 开头的目录
 - 用户在设置中配置的排除目录
 
+## 常见错误
+
+### 502 或连接失败
+
+通常是 HTTP 服务没启动、端口不一致，或 Obsidian 插件设置里的 endpoint 不是 `http://127.0.0.1:8765`。先运行：
+
+```powershell
+.\scripts\check-kwipu-health.ps1
+```
+
+如果健康检查失败，先重启：
+
+```powershell
+.\scripts\start-kwipu-server.ps1
+```
+
+### 400 input length exceeds context length
+
+embedding 模型上下文不足。当前配置用 `KWIPU_EMBED_MAX_CHARS=4000` 做本地截断，长文件应按段落截断，避免把整篇笔记送进 embedding。
+
+### WinError 10053
+
+这通常表示 Obsidian 侧超时或取消请求后，Python 服务准备写回响应时连接已经断开。插件已经有超时、取消和重试状态；如果频繁出现，优先看 `/related completed in ...s` 的耗时，必要时降低 `topK` 或减少后台预计算。
+
+### storage 路径错误
+
+确认 `.env` 中：
+
+```text
+KWIPU_KNOWLEDGE_DIR=D:\repo
+KWIPU_STORAGE_DIR=D:\repo\00 rag storage
+KWIPU_EXCLUDE_DIRS=00 rag storage;.obsidian;.git;node_modules
+```
+
+`KWIPU_STORAGE_DIR` 不要指向普通笔记目录。若要多设备同步，建议固定为 vault 下的 `00 rag storage`，并在 Kwipu 排除规则中排除它。
+
+### 后端状态没有更新
+
+在插件设置页点击“刷新后端状态”，或重启 Obsidian。插件会读取 `/health` 并检查 storage、模型等指纹变化。
+
 ## 非目标
 
 - 不修改用户笔记。
@@ -178,5 +342,6 @@ Kwipu 相关上下文
 ## 开发检查
 
 ```bash
+npm test
 npm run check
 ```
