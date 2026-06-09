@@ -1,5 +1,6 @@
 const {
   ItemView,
+  MarkdownRenderer,
   MarkdownView,
   Notice,
   Plugin,
@@ -53,17 +54,46 @@ function titleForSection(section) {
 function extractPaths(answer) {
   const paths = new Set();
   const text = String(answer || "");
-  const bracketPattern = /\[([^\]\n]+\.md)\]/g;
-  const plainPattern = /(?:^|\s)([^\s\[\]()]+(?:\/|\\)[^\s\[\]()]+\.md)/g;
+  const markdownLinkPattern = /\[[^\]\n]*\]\(([^)\n]+?)(?:\s+"[^"]*")?\)/g;
+  const wikiLinkPattern = /\[\[([^\]\n|#]+)(?:#[^\]\n|]*)?(?:\|[^\]\n]*)?\]\]/g;
+  const bracketPattern = /\[([^\]\n]+?\.md(?:#[^\]\n]+)?)\]/g;
   let match;
 
+  while ((match = markdownLinkPattern.exec(text)) !== null) {
+    paths.add(match[1]);
+  }
+  while ((match = wikiLinkPattern.exec(text)) !== null) {
+    paths.add(match[1]);
+  }
   while ((match = bracketPattern.exec(text)) !== null) {
     paths.add(match[1]);
   }
-  while ((match = plainPattern.exec(text)) !== null) {
-    paths.add(match[1]);
+  for (const line of text.split(/\r?\n/)) {
+    const plain = line
+      .trim()
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\d+[.)]\s+/, "")
+      .replace(/^>\s+/, "");
+    if (/\[[^\]\n]*\]\(/.test(plain) || plain.includes("[[")) continue;
+    if (!plain.includes(".md") || !/[\\/]/.test(plain)) continue;
+    const end = plain.indexOf(".md") + 3;
+    paths.add(plain.slice(0, end));
   }
-  return Array.from(paths).slice(0, 8);
+  return Array.from(new Set(Array.from(paths).map(cleanResultPath).filter(Boolean))).slice(0, 8);
+}
+
+function cleanResultPath(path) {
+  const value = String(path || "")
+    .replace(/\\/g, "/")
+    .replace(/^file:\/+/, "")
+    .replace(/[?#].*$/, "")
+    .replace(/^["'`[\s]+|["'`\]\s.,;:，。；：]+$/g, "")
+    .replace(/^\/+/, "");
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    return value;
+  }
 }
 
 function isMarkdown(file) {
@@ -114,7 +144,7 @@ class RelatedContextView extends ItemView {
       });
     }
 
-    if (!this.plugin.state.sections.length) {
+    if (!this.plugin.state.section) {
       container.createDiv({
         cls: "kwipu-related-context__empty",
         text: this.plugin.state.emptyMessage,
@@ -122,9 +152,7 @@ class RelatedContextView extends ItemView {
       return;
     }
 
-    for (const section of this.plugin.state.sections) {
-      this.renderSection(container, section);
-    }
+    this.renderSection(container, this.plugin.state.section);
   }
 
   renderSection(container, section) {
@@ -169,10 +197,23 @@ class RelatedContextView extends ItemView {
       }
     }
 
-    sectionEl.createDiv({
-      cls: "kwipu-related-context__answer",
-      text: section.answer || "No related files returned yet.",
+    const answerEl = sectionEl.createDiv({
+      cls: "kwipu-related-context__answer markdown-rendered",
     });
+    this.renderMarkdown(answerEl, section.answer || "No related files returned yet.");
+  }
+
+  renderMarkdown(container, markdown) {
+    const sourcePath = this.plugin.state.filePath || "";
+    try {
+      if (MarkdownRenderer.renderMarkdown) {
+        MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, this);
+      } else {
+        MarkdownRenderer.render(this.app, markdown, container, sourcePath, this);
+      }
+    } catch (error) {
+      container.setText(markdown);
+    }
   }
 }
 
@@ -273,7 +314,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.state = {
       status: "Idle",
       filePath: "",
-      sections: [],
+      section: null,
       emptyMessage: "Open a Markdown file to query Kwipu.",
     };
     this.activeTimer = null;
@@ -311,8 +352,14 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       this.app.workspace.on("active-file-change", () => this.scheduleActiveFileUpdate(false))
     );
     this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => this.scheduleActiveFileUpdate(false))
+    );
+    this.registerEvent(
       this.app.workspace.on("editor-change", () => this.scheduleActiveFileUpdate(false))
     );
+    this.registerDomEvent(document, "selectionchange", () => {
+      this.scheduleActiveFileUpdate(false);
+    });
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (this.isIncludedMarkdown(file)) this.markIndexDirty();
@@ -374,7 +421,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       this.state = {
         status: "Idle",
         filePath: "",
-        sections: [],
+        section: null,
         emptyMessage: "Open a Markdown file to query Kwipu.",
       };
       this.renderViews();
@@ -387,25 +434,53 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.renderViews();
 
     const text = await this.app.vault.cachedRead(file);
-    const sections = this.splitSections(file.path, text).slice(0, this.settings.maxSectionsPerFile);
+    const sections = this.splitSections(file.path, text);
+    const cursorLine = this.getActiveCursorLine();
+    const currentSection = this.findSectionForLine(sections, cursorLine);
     if (runId !== this.currentRun) return;
 
-    this.state.sections = sections.map((section) => Object.assign({}, section, { loading: true }));
+    if (!currentSection) {
+      this.state.section = null;
+      this.state.status = "Idle";
+      this.state.emptyMessage = "No section found at the current cursor.";
+      this.renderViews();
+      return;
+    }
+
+    this.state.section = Object.assign({}, currentSection, { loading: true });
     this.state.status = "Querying";
-    this.state.emptyMessage = "No sections found.";
     this.renderViews();
 
-    for (let i = 0; i < sections.length; i += 1) {
-      if (runId !== this.currentRun) return;
-      const result = await this.getRelatedForSection(file, sections[i], force);
-      this.state.sections[i] = Object.assign({}, sections[i], result, { loading: false });
-      this.renderViews();
-      await this.saveSettings();
-    }
+    const result = await this.getRelatedForSection(file, currentSection, force);
+    if (runId !== this.currentRun) return;
+    this.state.section = Object.assign({}, currentSection, result, { loading: false });
+    this.renderViews();
+    await this.saveSettings();
 
     this.state.status = "Done";
     this.renderViews();
     this.scheduleIdlePrecompute();
+  }
+
+  getActiveCursorLine() {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    try {
+      return view && view.editor ? view.editor.getCursor().line : 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  findSectionForLine(sections, line) {
+    if (!sections.length) return null;
+    const direct = sections.find((section) => line >= section.startLine && line <= section.endLine);
+    if (direct) return direct;
+    let nearest = sections[0];
+    for (const section of sections) {
+      if (section.startLine <= line) nearest = section;
+      else break;
+    }
+    return nearest;
   }
 
   splitSections(filePath, text) {
@@ -582,12 +657,78 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
   }
 
   async openPath(path) {
-    const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "");
-    const file = this.app.vault.getAbstractFileByPath(normalized);
+    const resolution = this.resolveMarkdownPath(path);
+    const file = resolution.file;
     if (file instanceof TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
     } else {
+      console.warn("Kwipu Related Context: file not found", {
+        input: path,
+        normalized: resolution.normalized,
+        candidates: resolution.candidates,
+      });
       new Notice(`File not found: ${path}`);
     }
+  }
+
+  resolveMarkdownPath(path) {
+    const normalized = cleanResultPath(path);
+    const rawCandidates = [
+      normalized,
+      normalized.replace(/^.*?(03 collection\/)/, "$1"),
+      normalized.replace(/^.*?(Law\/)/, "03 collection/$1"),
+    ];
+    const candidates = new Set();
+
+    for (const candidate of rawCandidates) {
+      if (!candidate) continue;
+      candidates.add(candidate);
+      if (!candidate.toLowerCase().endsWith(".md")) candidates.add(`${candidate}.md`);
+    }
+
+    for (const candidate of candidates) {
+      const file = this.app.vault.getAbstractFileByPath(candidate);
+      if (file instanceof TFile) return { file, normalized, candidates: Array.from(candidates) };
+    }
+
+    const files = this.app.vault.getMarkdownFiles();
+    const suffixMatches = files.filter((file) =>
+      Array.from(candidates).some((candidate) => file.path.endsWith(candidate))
+    );
+    if (suffixMatches.length === 1) {
+      return { file: suffixMatches[0], normalized, candidates: Array.from(candidates) };
+    }
+
+    const basename = normalized.split("/").pop();
+    const basenameWithExtension = basename && basename.toLowerCase().endsWith(".md")
+      ? basename
+      : basename
+        ? `${basename}.md`
+        : "";
+    if (basename) {
+      const basenameMatches = files.filter((file) => file.name === basenameWithExtension);
+      if (basenameMatches.length === 1) {
+        return { file: basenameMatches[0], normalized, candidates: Array.from(candidates) };
+      }
+      if (basenameMatches.length > 1) {
+        const active = this.app.workspace.getActiveFile();
+        if (active) {
+          const activeParts = active.path.split("/");
+          const scored = basenameMatches
+            .map((file) => {
+              const parts = file.path.split("/");
+              let score = 0;
+              for (let i = 0; i < Math.min(parts.length, activeParts.length); i += 1) {
+                if (parts[i] === activeParts[i]) score += 1;
+              }
+              return { file, score };
+            })
+            .sort((a, b) => b.score - a.score);
+          return { file: scored[0].file, normalized, candidates: Array.from(candidates) };
+        }
+        return { file: basenameMatches[0], normalized, candidates: Array.from(candidates) };
+      }
+    }
+    return { file: null, normalized, candidates: Array.from(candidates) };
   }
 };

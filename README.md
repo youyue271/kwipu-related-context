@@ -1,6 +1,6 @@
 # Kwipu Related Context
 
-An Obsidian plugin for showing Kwipu-powered related vault files for the file currently open in the editor. The plugin works at paragraph/block granularity: it reads the active Markdown file, splits it into meaningful sections, sends each section to a local Kwipu HTTP service, caches results by section hash, and displays recommendations inside Obsidian.
+An Obsidian plugin for showing Kwipu-powered related vault files for the paragraph or block where the cursor is currently located. The plugin reads the active Markdown file, splits it into meaningful sections, sends the current section to a local Kwipu HTTP service, caches results by section hash, and displays recommendations inside Obsidian.
 
 This directory contains a first runnable plugin version. It intentionally depends on Kwipu instead of becoming a separate local-search plugin.
 
@@ -66,7 +66,8 @@ Then enable `Kwipu Related Context` from Obsidian community plugins.
 2. Open Obsidian.
 3. Enable/open the `Kwipu Related Context` sidebar.
 4. Open a Markdown note.
-5. The sidebar splits the active file into sections and queries Kwipu for each section.
+5. Put the cursor in the paragraph or heading section you are working on.
+6. The sidebar queries Kwipu for that current section only.
 
 The plugin caches results by:
 
@@ -78,9 +79,9 @@ If a paragraph changes, only that paragraph's related context is recomputed.
 
 ## Goals
 
-- Track the active Markdown file in real time.
+- Track the active Markdown file and cursor section in real time.
 - Split the active file into paragraphs or semantic blocks.
-- For each changed paragraph, ask Kwipu for related files across the vault.
+- For the current changed paragraph, ask Kwipu for related files across the vault.
 - Show related files near the current context or in a side panel.
 - Cache paragraph hashes and related-file results to avoid recomputing unchanged content.
 - Use idle time to precompute likely future recommendations.
@@ -98,7 +99,7 @@ If a paragraph changes, only that paragraph's related context is recomputed.
 
 The first version should provide a right sidebar view named "Related Context".
 
-When the user opens or edits a Markdown note, the view lists sections from the active file. Under each section, it shows related files with a short reason or matching excerpt when available.
+When the user opens or edits a Markdown note, the view shows only the section containing the current cursor. Under that section, it shows related files with a short reason or matching excerpt when available. Kwipu's answer is rendered as Markdown in the sidebar, so links, lists, and headings are readable instead of plain text.
 
 Example layout:
 
@@ -107,14 +108,10 @@ Related Context
 
 Current: Traffic Control.md
 
-Section: "Signal priority rules..."
+Current section: "Signal priority rules..."
 - Urban Mobility Plan.md
 - Intersection Safety Notes.md
 - Queue Detection API.md
-
-Section: "Adaptive timing..."
-- SCOOT Overview.md
-- Reinforcement Learning Notes.md
 ```
 
 The view should update after a debounce rather than on every keystroke. A typical debounce target is 750-1500 ms after editing stops.
@@ -212,6 +209,16 @@ Response:
 }
 ```
 
+The plugin currently extracts candidate note paths from the Markdown answer, then resolves them against the Obsidian vault. Supported path forms include:
+
+- `folder/note.md`
+- `[note](folder/note.md)`
+- `[[folder/note]]`
+- paths returned with a local prefix before `03 collection/`
+- `Law/...` paths that should map to `03 collection/Law/...`
+
+If a button still cannot open a note, Obsidian's developer console logs the original path, normalized path, and candidate vault paths used during resolution.
+
 The older local-only scoring idea is kept as a possible fallback design, but it is not the current product direction:
 
 1. Direct Obsidian signals:
@@ -241,7 +248,7 @@ If the file is edited:
 
 - Re-split the active file after debounce.
 - Compare section hashes against cache.
-- Recompute only changed or new sections.
+- Recompute the current changed or new section immediately.
 - Remove cache entries for deleted sections.
 
 If another file changes:

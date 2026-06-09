@@ -24,9 +24,11 @@
 ## Phase 2 - Active File Tracking
 
 - [x] Listen for active file changes.
+- [x] Listen for active leaf and cursor/selection changes.
 - [x] Ignore non-Markdown files.
 - [x] Read the active Markdown file through Obsidian Vault APIs.
 - [x] Debounce editor changes.
+- [x] Query only the current cursor section in the foreground.
 - [ ] Track current file mtime and size.
 - [x] Display basic active-file status in the sidebar.
 
@@ -78,13 +80,15 @@
 ## Phase 6 - Sidebar UI
 
 - [x] Render active file name.
-- [x] Render sections from the active file.
+- [x] Render the current cursor section from the active file.
 - [x] Render related files under each section.
+- [x] Render Kwipu answers as Markdown.
 - [x] Add click-to-open file behavior.
 - [x] Show loading state.
 - [x] Show empty state when no related files are found.
 - [x] Add setting for max results per section.
-- [ ] Improve parsing of source paths from Kwipu answers.
+- [x] Improve parsing of source paths from Kwipu answers.
+- [x] Add debug logging for unresolved click-to-open paths.
 - [ ] Add stale-cache indicator.
 
 ## Phase 7 - Idle Precomputation
