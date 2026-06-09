@@ -125,6 +125,107 @@ function formatQueryMeta(result) {
   return parts.join(" · ");
 }
 
+function removeCachePath(cache, path) {
+  if (!cache || !path) return false;
+  let changed = false;
+  if (cache.files && cache.files[path]) {
+    delete cache.files[path];
+    changed = true;
+  }
+  if (cache.stats && cache.stats[path]) {
+    delete cache.stats[path];
+    changed = true;
+  }
+  if (removeRelatedReferences(cache, path)) changed = true;
+  if (changed) cache.indexDirty = true;
+  return changed;
+}
+
+function migrateCachePath(cache, oldPath, newPath) {
+  if (!cache || !oldPath || !newPath || oldPath === newPath) return false;
+  let changed = false;
+  cache.files = cache.files || {};
+  cache.stats = cache.stats || {};
+  if (cache.files[oldPath]) {
+    cache.files[newPath] = cache.files[oldPath];
+    delete cache.files[oldPath];
+    changed = true;
+  }
+  if (cache.stats[oldPath]) {
+    cache.stats[newPath] = cache.stats[oldPath];
+    delete cache.stats[oldPath];
+    changed = true;
+  }
+  if (migrateRelatedReferences(cache, oldPath, newPath)) changed = true;
+  if (changed) cache.indexDirty = true;
+  return changed;
+}
+
+function removeRelatedReferences(cache, path) {
+  if (!cache || !cache.files || !path) return false;
+  let changed = false;
+  for (const fileCache of Object.values(cache.files)) {
+    for (const section of Object.values((fileCache && fileCache.sections) || {})) {
+      if (Array.isArray(section.paths) && section.paths.includes(path)) {
+        section.paths = section.paths.filter((item) => item !== path);
+        changed = true;
+      }
+      if (Array.isArray(section.related) && section.related.some((item) => item && item.path === path)) {
+        section.related = section.related.filter((item) => item && item.path !== path);
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
+function migrateRelatedReferences(cache, oldPath, newPath) {
+  if (!cache || !cache.files || !oldPath || !newPath) return false;
+  let changed = false;
+  for (const fileCache of Object.values(cache.files)) {
+    for (const section of Object.values((fileCache && fileCache.sections) || {})) {
+      if (Array.isArray(section.paths)) {
+        section.paths = section.paths.map((item) => {
+          if (item === oldPath) {
+            changed = true;
+            return newPath;
+          }
+          return item;
+        });
+      }
+      if (Array.isArray(section.related)) {
+        section.related = section.related.map((item) => {
+          if (item && item.path === oldPath) {
+            changed = true;
+            return Object.assign({}, item, { path: newPath });
+          }
+          return item;
+        });
+      }
+    }
+  }
+  return changed;
+}
+
+function backendSignature(data) {
+  if (!data || typeof data !== "object") return "";
+  return [
+    data.knowledgeDir || "",
+    data.storageDir || "",
+    data.llmModel || data.modelName || "",
+    data.embedModel || "",
+    data.indexVersion || "",
+  ].join("|");
+}
+
+function applyBackendSignature(cache, signature) {
+  if (!cache || !signature) return false;
+  if (cache.backendSignature === signature) return false;
+  cache.backendSignature = signature;
+  cache.indexDirty = true;
+  return true;
+}
+
 function cleanResultPath(path) {
   const value = String(path || "")
     .replace(/\\/g, "/")
@@ -460,7 +561,24 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
         if (this.isIncludedMarkdown(file)) this.markIndexDirty();
       })
     );
+    this.registerEvent(
+      this.app.vault.on("delete", async (file) => {
+        if (file instanceof TFile && removeCachePath(this.cache, file.path)) {
+          await this.saveSettings();
+          this.renderViews();
+        }
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", async (file, oldPath) => {
+        if (file instanceof TFile && migrateCachePath(this.cache, oldPath, file.path)) {
+          await this.saveSettings();
+          this.renderViews();
+        }
+      })
+    );
 
+    this.refreshBackendSignature();
     this.scheduleActiveFileUpdate(false);
   }
 
@@ -781,6 +899,18 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.scheduleIdlePrecompute();
   }
 
+  async refreshBackendSignature() {
+    try {
+      const response = await fetch(`${this.settings.endpoint.replace(/\/$/, "")}/health`);
+      const data = await response.json();
+      if (response.ok && data.ok && applyBackendSignature(this.cache, backendSignature(data))) {
+        await this.saveSettings();
+      }
+    } catch (error) {
+      // 后端不可用时不清缓存，只让查询路径报告具体错误。
+    }
+  }
+
   scheduleIdlePrecompute() {
     window.clearTimeout(this.idleTimer);
     if (!this.settings.idlePrecompute) return;
@@ -911,8 +1041,12 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
 };
 
 module.exports.__test = {
+  applyBackendSignature,
+  backendSignature,
   cleanResultPath,
   extractPaths,
   normalizeRelatedResponse,
   formatQueryMeta,
+  migrateCachePath,
+  removeCachePath,
 };

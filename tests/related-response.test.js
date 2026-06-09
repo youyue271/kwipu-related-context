@@ -34,7 +34,13 @@ function loadPluginModule() {
 }
 
 const pluginModule = loadPluginModule();
-const { formatQueryMeta, normalizeRelatedResponse } = pluginModule.__test;
+const {
+  applyBackendSignature,
+  formatQueryMeta,
+  migrateCachePath,
+  normalizeRelatedResponse,
+  removeCachePath,
+} = pluginModule.__test;
 
 assert.strictEqual(typeof normalizeRelatedResponse, "function");
 
@@ -77,5 +83,46 @@ assert.strictEqual(fallback.related[0].path, "03 collection/Law/犯罪构成.md"
 assert.strictEqual(formatQueryMeta({ source: "cache", elapsedMs: 42 }), "缓存 · 42ms");
 assert.strictEqual(formatQueryMeta({ source: "backend", elapsedMs: 1234 }), "后端 · 1.2s");
 assert.strictEqual(formatQueryMeta({ source: "backend", elapsedMs: 0 }), "后端");
+
+const cache = {
+  files: {
+    "old.md": { sections: { a: {} } },
+    "keep.md": {
+      sections: {
+        b: {
+          paths: ["old.md", "other.md"],
+          related: [{ path: "old.md", reason: "旧路径" }, { path: "other.md" }],
+        },
+      },
+    },
+  },
+  stats: {
+    "old.md": { openCount: 2 },
+    "keep.md": { openCount: 1 },
+  },
+  indexDirty: false,
+};
+migrateCachePath(cache, "old.md", "new.md");
+assert.deepStrictEqual(Object.keys(cache.files).sort(), ["keep.md", "new.md"]);
+assert.strictEqual(cache.stats["new.md"].openCount, 2);
+assert.deepStrictEqual(cache.files["keep.md"].sections.b.paths, ["new.md", "other.md"]);
+assert.strictEqual(cache.files["keep.md"].sections.b.related[0].path, "new.md");
+assert.strictEqual(cache.indexDirty, true);
+
+removeCachePath(cache, "new.md");
+assert.strictEqual(cache.files["new.md"], undefined);
+assert.strictEqual(cache.stats["new.md"], undefined);
+assert.strictEqual(cache.files["keep.md"].sections.b !== undefined, true);
+assert.deepStrictEqual(cache.files["keep.md"].sections.b.paths, ["other.md"]);
+assert.deepStrictEqual(cache.files["keep.md"].sections.b.related, [{ path: "other.md" }]);
+
+assert.strictEqual(applyBackendSignature(cache, "sig-a"), true);
+assert.strictEqual(cache.backendSignature, "sig-a");
+assert.strictEqual(cache.indexDirty, true);
+cache.indexDirty = false;
+assert.strictEqual(applyBackendSignature(cache, "sig-a"), false);
+assert.strictEqual(cache.indexDirty, false);
+assert.strictEqual(applyBackendSignature(cache, "sig-b"), true);
+assert.strictEqual(cache.indexDirty, true);
 
 console.log("related response tests passed");
