@@ -48,7 +48,7 @@ function parseList(value) {
 function titleForSection(section) {
   if (section.heading) return section.heading;
   const firstLine = section.text.split(/\r?\n/).find((line) => line.trim());
-  return firstLine ? firstLine.trim().slice(0, 80) : "Untitled section";
+  return firstLine ? firstLine.trim().slice(0, 80) : "未命名段落";
 }
 
 function extractPaths(answer) {
@@ -111,7 +111,7 @@ class RelatedContextView extends ItemView {
   }
 
   getDisplayText() {
-    return "Kwipu Related Context";
+    return "Kwipu 相关上下文";
   }
 
   getIcon() {
@@ -130,7 +130,7 @@ class RelatedContextView extends ItemView {
     const header = container.createDiv({ cls: "kwipu-related-context__header" });
     header.createDiv({
       cls: "kwipu-related-context__title",
-      text: "Kwipu Related Context",
+      text: "Kwipu 相关上下文",
     });
     header.createDiv({
       cls: "kwipu-related-context__status",
@@ -163,7 +163,7 @@ class RelatedContextView extends ItemView {
     });
     sectionEl.createDiv({
       cls: "kwipu-related-context__section-meta",
-      text: `Lines ${section.startLine + 1}-${section.endLine + 1}`,
+      text: `第 ${section.startLine + 1}-${section.endLine + 1} 行`,
     });
     sectionEl.createDiv({
       cls: "kwipu-related-context__excerpt",
@@ -173,7 +173,7 @@ class RelatedContextView extends ItemView {
     if (section.loading) {
       sectionEl.createDiv({
         cls: "kwipu-related-context__status",
-        text: "Querying Kwipu...",
+        text: "正在查询 Kwipu...",
       });
       return;
     }
@@ -189,14 +189,14 @@ class RelatedContextView extends ItemView {
     const answerEl = sectionEl.createDiv({
       cls: "kwipu-related-context__answer markdown-rendered",
     });
-    this.renderMarkdown(answerEl, section.answer || "No related files returned yet.");
+    this.renderMarkdown(answerEl, section.answer || "暂时没有返回相关文件。");
 
     if (section.paths && section.paths.length) {
       const linksEl = sectionEl.createDiv({
         cls: "kwipu-related-context__related-links markdown-rendered",
       });
       const linksMarkdown = [
-        "###### Related notes",
+        "###### 相关笔记",
         ...section.paths.map((path) => `- [[${this.plugin.toWikiLinkPath(path)}]]`),
       ].join("\n");
       this.renderMarkdown(linksEl, linksMarkdown);
@@ -226,11 +226,11 @@ class RelatedContextSettingsTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Kwipu Related Context" });
+    containerEl.createEl("h2", { text: "Kwipu 相关上下文" });
 
     new Setting(containerEl)
-      .setName("Kwipu HTTP endpoint")
-      .setDesc("Local Kwipu server endpoint.")
+      .setName("Kwipu HTTP 地址")
+      .setDesc("本地 Kwipu 服务地址。")
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_SETTINGS.endpoint)
@@ -242,8 +242,8 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Debounce")
-      .setDesc("Milliseconds to wait after file/editor changes before querying Kwipu.")
+      .setName("防抖延迟")
+      .setDesc("文件或编辑器变化后，等待多少毫秒再查询 Kwipu。")
       .addText((text) =>
         text.setValue(String(this.plugin.settings.debounceMs)).onChange(async (value) => {
           this.plugin.settings.debounceMs = Number(value) || DEFAULT_SETTINGS.debounceMs;
@@ -252,8 +252,8 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Max results per section")
-      .setDesc("Passed to the Kwipu related endpoint.")
+      .setName("每段最大结果数")
+      .setDesc("传给 Kwipu 相关上下文接口的 topK。")
       .addText((text) =>
         text
           .setValue(String(this.plugin.settings.maxResultsPerSection))
@@ -265,8 +265,8 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Max sections per file")
-      .setDesc("Limits per-active-file requests.")
+      .setName("每个文件最大段落数")
+      .setDesc("限制后台预计算时每个文件处理的段落数量。")
       .addText((text) =>
         text.setValue(String(this.plugin.settings.maxSectionsPerFile)).onChange(async (value) => {
           this.plugin.settings.maxSectionsPerFile =
@@ -276,8 +276,8 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Excluded directories")
-      .setDesc("Semicolon or comma separated.")
+      .setName("排除目录")
+      .setDesc("用分号或逗号分隔。")
       .addText((text) =>
         text.setValue(this.plugin.settings.excludeDirs).onChange(async (value) => {
           this.plugin.settings.excludeDirs = value;
@@ -286,8 +286,8 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Excluded directory prefixes")
-      .setDesc("Semicolon or comma separated.")
+      .setName("排除目录前缀")
+      .setDesc("用分号或逗号分隔。")
       .addText((text) =>
         text.setValue(this.plugin.settings.excludePrefixes).onChange(async (value) => {
           this.plugin.settings.excludePrefixes = value;
@@ -296,8 +296,8 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Idle precompute")
-      .setDesc("Use idle time to precompute frequently opened notes.")
+      .setName("空闲预计算")
+      .setDesc("空闲时预计算常打开笔记的相关上下文。")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.idlePrecompute).onChange(async (value) => {
           this.plugin.settings.idlePrecompute = value;
@@ -312,10 +312,10 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.cache = this.settings.cache || this.createEmptyCache();
     this.state = {
-      status: "Idle",
+      status: "空闲",
       filePath: "",
       section: null,
-      emptyMessage: "Open a Markdown file to query Kwipu.",
+      emptyMessage: "打开 Markdown 文件后开始查询 Kwipu。",
     };
     this.activeTimer = null;
     this.idleTimer = null;
@@ -326,26 +326,26 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new RelatedContextView(leaf, this));
     this.addSettingTab(new RelatedContextSettingsTab(this.app, this));
 
-    this.addRibbonIcon("network", "Open Kwipu Related Context", () => {
+    this.addRibbonIcon("network", "打开 Kwipu 相关上下文", () => {
       this.activateView();
     });
     this.addCommand({
       id: "open-kwipu-related-context",
-      name: "Open Kwipu Related Context",
+      name: "打开 Kwipu 相关上下文",
       callback: () => this.activateView(),
     });
     this.addCommand({
       id: "recompute-kwipu-related-context",
-      name: "Recompute Kwipu Related Context for current file",
+      name: "重新计算当前段落的 Kwipu 相关上下文",
       callback: () => this.recomputeActiveFile(true),
     });
     this.addCommand({
       id: "clear-kwipu-related-cache",
-      name: "Clear Kwipu Related Context cache",
+      name: "清空 Kwipu 相关上下文缓存",
       callback: async () => {
         this.cache = this.createEmptyCache();
         await this.saveSettings();
-        new Notice("Kwipu related context cache cleared.");
+        new Notice("已清空 Kwipu 相关上下文缓存。");
         this.scheduleActiveFileUpdate(true);
       },
     });
@@ -418,17 +418,17 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     const file = this.app.workspace.getActiveFile();
     if (!this.isIncludedMarkdown(file)) {
       this.state = {
-        status: "Idle",
+        status: "空闲",
         filePath: "",
         section: null,
-        emptyMessage: "Open a Markdown file to query Kwipu.",
+        emptyMessage: "打开 Markdown 文件后开始查询 Kwipu。",
       };
       this.renderViews();
       return;
     }
 
     this.recordOpen(file.path);
-    this.state.status = "Reading";
+    this.state.status = "读取中";
     this.state.filePath = file.path;
     this.renderViews();
 
@@ -440,14 +440,14 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
 
     if (!currentSection) {
       this.state.section = null;
-      this.state.status = "Idle";
-      this.state.emptyMessage = "No section found at the current cursor.";
+      this.state.status = "空闲";
+      this.state.emptyMessage = "当前光标位置没有可查询的段落。";
       this.renderViews();
       return;
     }
 
     this.state.section = Object.assign({}, currentSection, { loading: true });
-    this.state.status = "Querying";
+    this.state.status = "查询中";
     this.renderViews();
 
     const result = await this.getRelatedForSection(file, currentSection, force);
@@ -456,7 +456,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.renderViews();
     await this.saveSettings();
 
-    this.state.status = "Done";
+    this.state.status = "完成";
     this.renderViews();
     this.scheduleIdlePrecompute();
   }
@@ -597,7 +597,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       this.cache.indexDirty = false;
       return { answer, paths, error: "" };
     } catch (error) {
-      const message = `Kwipu unavailable: ${error.message || error}`;
+      const message = `Kwipu 不可用：${error.message || error}`;
       return {
         answer: cached ? cached.answer : "",
         paths: cached ? cached.paths || [] : [],
@@ -689,12 +689,12 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     if (file instanceof TFile) {
       await this.app.workspace.getLeaf(false).openFile(file);
     } else {
-      console.warn("Kwipu Related Context: file not found", {
+      console.warn("Kwipu 相关上下文：找不到文件", {
         input: path,
         normalized: resolution.normalized,
         candidates: resolution.candidates,
       });
-      new Notice(`File not found: ${path}`);
+      new Notice(`找不到文件：${path}`);
     }
   }
 

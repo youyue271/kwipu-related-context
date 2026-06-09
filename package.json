@@ -1,7 +1,7 @@
 {
   "name": "kwipu-related-context",
   "version": "0.1.0",
-  "description": "Obsidian plugin that asks a local Kwipu HTTP server for related context per active-note section.",
+  "description": "通过本地 Kwipu HTTP 服务为当前笔记段落显示相关上下文的 Obsidian 插件。",
   "main": "main.js",
   "scripts": {
     "check": "node --check main.js"

@@ -1,132 +1,136 @@
-# TODO
+# 待办
 
-## Phase 0 - Decisions
+## 阶段 0 - 决策
 
-- [x] Choose plugin package name and ID: `kwipu-related-context`.
-- [x] Decide whether version 1 is sidebar-only.
-- [x] Decide whether version 1 depends on the Kwipu Python backend or starts with local-only scoring.
-- [x] Decide cache location: Obsidian plugin data.
+- [x] 插件包名和 ID 使用 `kwipu-related-context`。
+- [x] 版本 1 采用右侧栏形态。
+- [x] 版本 1 直接依赖 Kwipu Python 后端，不先做本地搜索插件。
+- [x] 缓存保存在 Obsidian 插件数据目录。
 
-## Phase 1 - Plugin Scaffold
+## 阶段 1 - 插件脚手架
 
-- [x] Add `manifest.json`.
-- [x] Add `package.json`.
-- [ ] Add TypeScript build config.
-- [ ] Add `main.ts`.
-- [x] Add runnable `main.js`.
-- [x] Add a basic settings tab.
-- [x] Add a sidebar view called `Related Context`.
-- [x] Add commands:
-  - [x] `Open Related Context`
-  - [x] `Recompute Related Context for Current File`
-  - [x] `Clear Related Context Cache`
+- [x] 添加 `manifest.json`。
+- [x] 添加 `package.json`。
+- [ ] 添加 TypeScript 构建配置。
+- [ ] 添加 `main.ts`。
+- [x] 添加可直接运行的 `main.js`。
+- [x] 添加基础设置页。
+- [x] 添加 `Kwipu 相关上下文` 右侧栏视图。
+- [x] 添加命令：
+  - [x] 打开 Kwipu 相关上下文
+  - [x] 重新计算当前段落的 Kwipu 相关上下文
+  - [x] 清空 Kwipu 相关上下文缓存
 
-## Phase 2 - Active File Tracking
+## 阶段 2 - 当前文件跟踪
 
-- [x] Listen for active file changes.
-- [x] Listen for active leaf and cursor/selection changes.
-- [x] Ignore non-Markdown files.
-- [x] Read the active Markdown file through Obsidian Vault APIs.
-- [x] Debounce editor changes.
-- [x] Query only the current cursor section in the foreground.
-- [ ] Track current file mtime and size.
-- [x] Display basic active-file status in the sidebar.
+- [x] 监听当前文件变化。
+- [x] 监听编辑器变化和光标变化。
+- [x] 忽略非 Markdown 文件。
+- [x] 通过 Obsidian Vault API 读取当前 Markdown 文件。
+- [x] 对编辑器变化做防抖。
+- [x] 前台只查询当前光标所在段落。
+- [x] 侧边栏获得焦点时不让当前段落跳走。
+- [ ] 跟踪当前文件 mtime 和 size。
+- [x] 在右侧栏显示当前文件状态。
 
-## Phase 3 - Section Splitting
+## 阶段 3 - 段落切分
 
-- [x] Implement deterministic Markdown section splitting.
-- [x] Preserve heading, start line, end line, and text.
-- [x] Normalize section text before hashing.
-- [x] Compute section IDs and section hashes.
-- [ ] Add tests for:
-  - [ ] headings
-  - [ ] paragraph groups
-  - [ ] empty sections
-  - [ ] wikilink-only short sections
-  - [ ] stable IDs after unrelated edits
+- [x] 实现确定性的 Markdown 段落切分。
+- [x] 保留标题、起止行号和文本。
+- [x] 段落文本 hash 前做规范化。
+- [x] 计算段落 ID 和段落 hash。
+- [ ] 添加测试：
+  - [ ] 标题切分
+  - [ ] 空行段落组
+  - [ ] 空段落
+  - [ ] 仅包含 wikilink 的短段落
+  - [ ] 无关编辑后 ID 稳定性
 
-## Phase 4 - Cache
+## 阶段 4 - 缓存
 
-- [x] Define cache schema version.
-- [x] Load cache on plugin startup.
-- [x] Save cache after each file or section update.
-- [x] Cache section hash to related results.
-- [ ] Remove stale cache entries for deleted sections.
-- [ ] Track file stats:
-  - [x] open count
-  - [x] related-hit count
-  - [x] last opened time
-  - [ ] last computed time
-- [ ] Add cache migration handling.
+- [x] 定义缓存 schema 版本。
+- [x] 插件启动时加载缓存。
+- [x] 每次文件或段落更新后保存缓存。
+- [x] 按段落 hash 缓存后端结果。
+- [x] 同一段落查询进行中时复用请求。
+- [ ] 删除已移除段落的旧缓存。
+- [ ] 跟踪文件统计信息：
+  - [x] 打开次数
+  - [x] 作为相关结果命中次数
+  - [x] 最后打开时间
+  - [ ] 最后计算时间
+- [ ] 添加缓存迁移处理。
 
-## Phase 5 - Local Relatedness Scoring
+## 阶段 5 - 本地相关性评分
 
-- [x] Deferred: first runnable version calls Kwipu HTTP directly.
-- [ ] Build a lightweight vault metadata index.
-- [ ] Extract wikilinks per file.
-- [ ] Extract tags per file.
-- [ ] Extract title and headings per file.
-- [ ] Tokenize Markdown text for lexical scoring.
-- [ ] Score candidate files using:
-  - [ ] direct links
-  - [ ] backlinks
-  - [ ] shared tags
-  - [ ] title/heading overlap
-  - [ ] keyword overlap
-  - [ ] folder proximity
-- [ ] Return top N related files per section.
-- [ ] Store score and reason in cache.
+- [x] 暂缓：第一个可运行版本直接调用 Kwipu HTTP。
+- [ ] 构建轻量 vault 元数据索引。
+- [ ] 提取每个文件的 wikilink。
+- [ ] 提取 tag。
+- [ ] 提取标题和小标题。
+- [ ] 对 Markdown 文本做分词。
+- [ ] 按以下信号给候选文件打分：
+  - [ ] 直接链接
+  - [ ] 反链
+  - [ ] 共享 tag
+  - [ ] 标题重合
+  - [ ] 关键词重合
+  - [ ] 文件夹距离
+- [ ] 返回每段 top N 相关文件。
+- [ ] 缓存 score 和 reason。
 
-## Phase 6 - Sidebar UI
+## 阶段 6 - 右侧栏 UI
 
-- [x] Render active file name.
-- [x] Render the current cursor section from the active file.
-- [x] Render related files under each section.
-- [x] Render Kwipu answers as Markdown.
-- [x] Add click-to-open file behavior.
-- [x] Show loading state.
-- [x] Show empty state when no related files are found.
-- [x] Add setting for max results per section.
-- [x] Improve parsing of source paths from Kwipu answers.
-- [x] Add debug logging for unresolved click-to-open paths.
-- [ ] Add stale-cache indicator.
+- [x] 显示当前文件名。
+- [x] 显示当前光标所在段落。
+- [x] 在段落下显示相关文件。
+- [x] Kwipu 回答按 Markdown 渲染。
+- [x] 相关文件用 Obsidian 双链分条显示。
+- [x] 显示加载状态。
+- [x] 显示空状态。
+- [x] 添加每段最大结果数设置。
+- [x] 改进 Kwipu 回答中的路径解析。
+- [x] 对无法解析的路径输出调试日志。
+- [x] UI 文案中文化。
+- [ ] 添加缓存过期提示。
 
-## Phase 7 - Idle Precomputation
+## 阶段 7 - 空闲预计算
 
-- [x] Implement basic idle precompute queue.
-- [ ] Prioritize files by:
-  - [x] open count
-  - [x] related-hit count
-  - [ ] recent modification time
-  - [ ] links to/from active file
-- [x] Process queue in small batches.
-- [ ] Stop background work when the user edits or switches files.
-- [ ] Persist queue progress.
+- [x] 实现基础空闲预计算队列。
+- [ ] 按以下信号排序：
+  - [x] 打开次数
+  - [x] 相关结果命中次数
+  - [ ] 最近修改时间
+  - [ ] 与当前文件的链接关系
+- [x] 小批量处理队列。
+- [ ] 用户编辑或切换文件时停止后台任务。
+- [ ] 持久化队列进度。
 
-## Phase 8 - Kwipu Integration
+## 阶段 8 - Kwipu 集成
 
-- [x] Add setting for Kwipu backend URL.
-- [x] Define request shape for section text queries.
-- [x] Add `kwipu_http_server.py`.
-- [x] Cache backend results by section hash.
-- [ ] Add request timeout handling.
-- [ ] Add structured result format instead of parsing paths from answer text.
-- [ ] Show backend status in settings.
+- [x] 添加 Kwipu 后端地址设置。
+- [x] 定义段落查询请求结构。
+- [x] 添加 `kwipu_http_server.py`。
+- [x] 按段落 hash 缓存后端结果。
+- [x] `/related` 提示词要求中文回答。
+- [ ] 添加请求超时处理。
+- [ ] 后端返回结构化结果，避免从回答文本解析路径。
+- [ ] 在设置页显示后端状态。
 
-## Phase 9 - Exclusions
+## 阶段 9 - 排除规则
 
-- [x] Ignore `.obsidian`.
-- [x] Ignore `.trash`.
-- [x] Ignore folders starting with `00`, `01`, or `02`.
-- [x] Ignore configured user exclusion patterns.
-- [x] Ignore plugin cache folders if configured.
-- [x] Add settings UI for exclusions.
+- [x] 忽略 `.obsidian`。
+- [x] 忽略 `.trash`。
+- [x] 忽略 `00`、`01`、`02` 开头的目录。
+- [x] 忽略用户配置的排除规则。
+- [x] 忽略配置中的插件缓存目录。
+- [x] 添加排除规则设置 UI。
 
-## Phase 10 - Quality
+## 阶段 10 - 质量
 
-- [ ] Add unit tests for scoring.
-- [ ] Add unit tests for cache invalidation.
-- [ ] Add manual test vault.
-- [ ] Profile large vault startup.
-- [ ] Profile active-file edit latency.
-- [ ] Add README usage screenshots after UI exists.
+- [ ] 添加评分单元测试。
+- [ ] 添加缓存失效单元测试。
+- [ ] 添加手动测试 vault。
+- [ ] 压测大 vault 启动性能。
+- [ ] 压测当前文件编辑延迟。
+- [ ] README 添加界面截图。

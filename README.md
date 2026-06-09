@@ -1,23 +1,23 @@
-# Kwipu Related Context
+# Kwipu 相关上下文
 
-An Obsidian plugin for showing Kwipu-powered related vault files for the paragraph or block where the cursor is currently located. The plugin reads the active Markdown file, splits it into meaningful sections, sends the current section to a local Kwipu HTTP service, caches results by section hash, and displays recommendations inside Obsidian.
+这是一个给 Kwipu 使用的 Obsidian 插件。它会读取当前打开的 Markdown 文件，按标题和段落切分内容，只把当前光标所在段落发送给本地 Kwipu HTTP 服务，然后在右侧栏显示相关笔记建议。
 
-This directory contains a first runnable plugin version. It intentionally depends on Kwipu instead of becoming a separate local-search plugin.
+插件依赖 Kwipu 后端，不会退化成一个独立的本地搜索插件。
 
-## Current Implementation
+## 当前实现
 
-- `manifest.json`: Obsidian plugin manifest.
-- `main.js`: runnable plugin entrypoint.
-- `styles.css`: sidebar styles.
-- `package.json`: minimal metadata and `node --check` script.
+- `manifest.json`：Obsidian 插件清单。
+- `main.js`：可直接运行的插件入口。
+- `styles.css`：右侧栏样式。
+- `package.json`：基础元信息和 `node --check` 检查命令。
 
-The local HTTP bridge lives in the Kwipu main project as `kwipu_http_server.py`.
+本地 HTTP bridge 位于 Kwipu 主项目的 `kwipu_http_server.py`。
 
-The plugin is desktop-only because it calls `http://127.0.0.1:8765`.
+插件目前只支持桌面端，因为它调用本机地址 `http://127.0.0.1:8765`。
 
-## Run Kwipu HTTP Server
+## 启动 Kwipu HTTP 服务
 
-Start the HTTP bridge before opening Obsidian:
+打开 Obsidian 前，先在 Windows 侧启动 HTTP 服务：
 
 ```powershell
 cd D:\project\Kwipu
@@ -36,21 +36,21 @@ $env:KWIPU_EXCLUDE_DIR_PREFIXES = "00;01;02"
 python kwipu_http_server.py --llm-model qwen3.6:35b-a3b-q4_K_M --embed-model bge-m3:567m
 ```
 
-Health check:
+健康检查：
 
 ```powershell
 curl http://127.0.0.1:8765/health
 ```
 
-## Install In Obsidian
+## 安装到 Obsidian
 
-Copy or symlink this directory into your vault:
+把本目录复制或软链接到 vault 的插件目录：
 
 ```text
 D:\repo\.obsidian\plugins\kwipu-related-context
 ```
 
-The directory must contain:
+目录中至少需要包含：
 
 ```text
 manifest.json
@@ -58,261 +58,125 @@ main.js
 styles.css
 ```
 
-Then enable `Kwipu Related Context` from Obsidian community plugins.
+然后在 Obsidian 社区插件设置中启用 `Kwipu 相关上下文`。
 
-## Usage
+## 使用方式
 
-1. Start `kwipu_http_server.py`.
-2. Open Obsidian.
-3. Enable/open the `Kwipu Related Context` sidebar.
-4. Open a Markdown note.
-5. Put the cursor in the paragraph or heading section you are working on.
-6. The sidebar queries Kwipu for that current section only.
+1. 启动 `kwipu_http_server.py`。
+2. 打开 Obsidian。
+3. 启用并打开 `Kwipu 相关上下文` 右侧栏。
+4. 打开一篇 Markdown 笔记。
+5. 把光标放在当前正在阅读或编辑的段落。
+6. 右侧栏只查询这个当前段落，并显示中文相关建议。
 
-The plugin caches results by:
-
-```text
-file path + section id + section content hash
-```
-
-If a paragraph changes, only that paragraph's related context is recomputed.
-
-## Goals
-
-- Track the active Markdown file and cursor section in real time.
-- Split the active file into paragraphs or semantic blocks.
-- For the current changed paragraph, ask Kwipu for related files across the vault.
-- Show related files near the current context or in a side panel.
-- Cache paragraph hashes and related-file results to avoid recomputing unchanged content.
-- Use idle time to precompute likely future recommendations.
-
-## Non-Goals
-
-- Do not modify user notes.
-- Do not require cloud services.
-- Do not index non-Markdown files in the first version.
-- Do not replace Obsidian search, backlinks, or graph view.
-- Do not compute expensive whole-vault results synchronously while the user is typing.
-- Do not silently fall back to a separate local-only search engine when Kwipu is unavailable.
-
-## User Experience
-
-The first version should provide a right sidebar view named "Related Context".
-
-When the user opens or edits a Markdown note, the view shows only the section containing the current cursor. Under that section, it shows related files with a short reason or matching excerpt when available. Kwipu's answer is rendered as Markdown in the sidebar, so links, lists, and headings are readable instead of plain text.
-
-Example layout:
+插件缓存键为：
 
 ```text
-Related Context
-
-Current: Traffic Control.md
-
-Current section: "Signal priority rules..."
-- Urban Mobility Plan.md
-- Intersection Safety Notes.md
-- Queue Detection API.md
+文件路径 + 段落 ID + 段落内容 hash
 ```
 
-The view should update after a debounce rather than on every keystroke. A typical debounce target is 750-1500 ms after editing stops.
+如果段落内容没有变化，会直接使用缓存。同一段落正在查询时，插件会复用进行中的请求，避免重复打到后端。
 
-## Data Model
+## 交互行为
 
-The plugin should store cache data under the plugin data directory, not inside user notes.
+- 右侧栏只显示当前光标所在段落的建议。
+- 点右侧栏不会让当前段落识别跳走。
+- Kwipu 返回内容会按 Markdown 渲染。
+- 相关文件会在回答下方显示为 Obsidian 双链。
+- 查询结果要求使用中文回答。
 
-Suggested cache shape:
-
-```json
-{
-  "version": 1,
-  "vaultId": "local",
-  "files": {
-    "folder/current.md": {
-      "mtime": 1710000000000,
-      "size": 12345,
-      "sections": [
-        {
-          "sectionId": "sha1(path + heading + index)",
-          "hash": "sha256(section text)",
-          "heading": "Traffic Control",
-          "startLine": 12,
-          "endLine": 24,
-          "related": [
-            {
-              "path": "folder/other.md",
-              "score": 0.82,
-              "reason": "shared terms and backlinks",
-              "computedAt": 1710000000000
-            }
-          ]
-        }
-      ]
-    }
-  },
-  "stats": {
-    "folder/other.md": {
-      "openCount": 12,
-      "relatedHitCount": 31,
-      "lastOpenedAt": 1710000000000
-    }
-  }
-}
-```
-
-## Section Splitting
-
-Initial section splitting should be deterministic and cheap:
-
-- Split on headings.
-- Within long heading sections, split on blank-line paragraph groups.
-- Ignore very short blocks unless they contain wikilinks or tags.
-- Preserve line ranges so results can be displayed near the relevant source text later.
-
-The implementation should produce stable section IDs where possible. A good first version is:
+示例：
 
 ```text
-sha256(file path + nearest heading + section index)
+Kwipu 相关上下文
+
+当前文件：03 collection/Law/刑法总论.md
+
+当前段落：犯罪构成要件……
+- [[03 collection/Law/犯罪构成]]
+- [[03 collection/Law/违法性]]
+- [[03 collection/Law/责任]]
 ```
 
-The content hash should be separate:
+## 路径解析
 
-```text
-sha256(normalized section text)
-```
+插件会从 Kwipu 的 Markdown 回答中提取候选路径，再解析为 Obsidian vault 内的笔记。
 
-That lets the plugin know whether a cached recommendation is still valid.
-
-## Relatedness Strategy
-
-The first implementation calls the local Kwipu HTTP bridge:
-
-```http
-POST http://127.0.0.1:8765/related
-Content-Type: application/json
-
-{
-  "filePath": "folder/current.md",
-  "sectionId": "abc123",
-  "sectionText": "paragraph text...",
-  "topK": 5
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "answer": "Related files with reasons...",
-  "filePath": "folder/current.md",
-  "sectionId": "abc123"
-}
-```
-
-The plugin currently extracts candidate note paths from the Markdown answer, then resolves them against the Obsidian vault. Supported path forms include:
+支持的形式包括：
 
 - `folder/note.md`
 - `[note](folder/note.md)`
 - `[[folder/note]]`
-- paths returned with a local prefix before `03 collection/`
-- `Law/...` paths that should map to `03 collection/Law/...`
+- 带本机前缀但包含 `03 collection/` 的路径
+- `Law/...` 自动映射到 `03 collection/Law/...`
 
-If a button still cannot open a note, Obsidian's developer console logs the original path, normalized path, and candidate vault paths used during resolution.
+如果仍然无法打开笔记，Obsidian 开发者控制台会打印原始路径、规范化路径和候选路径。
 
-The older local-only scoring idea is kept as a possible fallback design, but it is not the current product direction:
+长期更好的方案是让 `kwipu_http_server.py` 返回结构化结果，例如：
 
-1. Direct Obsidian signals:
-   - outgoing wikilinks
-   - backlinks
-   - shared tags
-   - same folder or nearby folder
-
-2. Lexical similarity:
-   - normalized keyword overlap
-   - heading/title overlap
-   - BM25-style scoring if cheap enough
-
-3. External backend:
-   - call the local Kwipu HTTP endpoint
-   - retrieve graph/vector results for the section text
-
-## Caching Strategy
-
-Cache key:
-
-```text
-file path + section id + section content hash + index version
+```json
+{
+  "ok": true,
+  "answer": "中文解释...",
+  "related": [
+    {
+      "path": "03 collection/Law/犯罪构成.md",
+      "reason": "与当前段落都讨论构成要件。"
+    }
+  ]
+}
 ```
 
-If the file is edited:
+这样插件就不需要从模型回答文本里解析路径。
 
-- Re-split the active file after debounce.
-- Compare section hashes against cache.
-- Recompute the current changed or new section immediately.
-- Remove cache entries for deleted sections.
+## 缓存策略
 
-If another file changes:
+缓存数据保存在 Obsidian 插件数据目录，不写入用户笔记。
 
-- Mark global index state dirty.
-- Recompute affected active-file sections lazily.
-- Schedule low-priority background refreshes.
+当前缓存包含：
 
-## Idle Precomputation
+- 每个文件的段落 hash。
+- 每个段落的 Kwipu 回答和提取出的相关路径。
+- 文件打开次数。
+- 相关结果命中次数。
 
-The plugin can make the UI feel faster by using idle time.
+文件编辑后：
 
-Signals to prioritize:
+- 插件会在防抖延迟后重新切分当前文件。
+- 只重新计算当前光标所在段落。
+- 内容 hash 未变化时直接读缓存。
 
-- files opened frequently
-- files frequently shown as related results
-- files recently modified
-- files linked from the active file
-- files linking to the active file
+## 后台预计算
 
-Idle queue behavior:
+插件可以在空闲时预计算一小部分常用笔记。
 
-- process only when Obsidian is idle
-- keep work in small batches
-- stop immediately when the active file changes or the user starts typing
-- persist progress after each file or section
+优先级信号：
 
-## Display Strategy
+- 文件打开次数。
+- 文件作为相关结果出现的次数。
 
-Version 1 should use a sidebar view. Inline decorations can come later.
+当前后台预计算批量很小，避免影响正在编辑时的体验。
 
-Sidebar advantages:
+## 排除规则
 
-- simpler to implement
-- less risk of editor performance issues
-- easier to debug cache and scoring
-
-Later versions can add:
-
-- inline gutter indicators
-- hover popovers
-- command palette action: "Show related context for current section"
-- status bar progress indicator
-
-## Performance Rules
-
-- Never scan the whole vault synchronously on active file change.
-- Debounce editor changes.
-- Cache by section hash.
-- Persist after small units of work.
-- Keep background batches interruptible.
-- Avoid indexing generated/cache folders.
-
-Default ignored folders should include:
+默认排除：
 
 - `.obsidian`
 - `.trash`
-- any folder starting with `00`, `01`, or `02`
-- plugin cache folders
-- configured user exclusions
+- `00`、`01`、`02` 开头的目录
+- 用户在设置中配置的排除目录
 
-## Open Questions
+## 非目标
 
-- Should related files be computed only from Obsidian metadata and lexical scoring, or should the plugin call Kwipu when available?
-- Should the cache live only in Obsidian plugin data, or can it optionally live in a synced folder?
-- Should per-section results show only files, or also matching paragraphs inside those files?
-- What is the maximum acceptable CPU time per active file update?
+- 不修改用户笔记。
+- 不依赖云服务。
+- 不索引非 Markdown 文件。
+- 不替代 Obsidian 搜索、反链或图谱视图。
+- 不在用户输入时同步扫描整个 vault。
+- 不在 Kwipu 不可用时悄悄切换成另一个本地搜索引擎。
+
+## 开发检查
+
+```bash
+npm run check
+```

@@ -1,9 +1,9 @@
 {
   "id": "kwipu-related-context",
-  "name": "Kwipu Related Context",
+  "name": "Kwipu 相关上下文",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "Show Kwipu-powered related files for each section of the active note.",
+  "description": "基于 Kwipu 为当前光标段落显示相关笔记。",
   "author": "Kwipu",
   "authorUrl": "",
   "isDesktopOnly": true
