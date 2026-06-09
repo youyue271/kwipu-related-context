@@ -34,7 +34,7 @@ function loadPluginModule() {
 }
 
 const pluginModule = loadPluginModule();
-const { normalizeRelatedResponse } = pluginModule.__test;
+const { formatQueryMeta, normalizeRelatedResponse } = pluginModule.__test;
 
 assert.strictEqual(typeof normalizeRelatedResponse, "function");
 
@@ -73,5 +73,9 @@ assert.deepStrictEqual(Array.from(fallback.paths), [
 ]);
 assert.strictEqual(fallback.related.length, 2);
 assert.strictEqual(fallback.related[0].path, "03 collection/Law/犯罪构成.md");
+
+assert.strictEqual(formatQueryMeta({ source: "cache", elapsedMs: 42 }), "缓存 · 42ms");
+assert.strictEqual(formatQueryMeta({ source: "backend", elapsedMs: 1234 }), "后端 · 1.2s");
+assert.strictEqual(formatQueryMeta({ source: "backend", elapsedMs: 0 }), "后端");
 
 console.log("related response tests passed");

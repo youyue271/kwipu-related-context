@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS = {
   maxResultsPerSection: 5,
   maxSectionsPerFile: 12,
   minSectionChars: 20,
+  requestTimeoutMs: 60000,
   excludeDirs: ".obsidian;.trash;00 rag storage",
   excludePrefixes: "00;01;02",
   idlePrecompute: true,
@@ -109,6 +110,19 @@ function normalizeRelatedResponse(response) {
     : extractPaths(answer).map((path) => ({ path, title: "", reason: "", score: null }));
   const paths = Array.from(new Set(related.map((item) => item.path).filter(Boolean)));
   return { answer, related, paths };
+}
+
+function formatQueryMeta(result) {
+  const parts = [];
+  if (result && result.source === "cache") parts.push("缓存");
+  else if (result && result.source === "backend") parts.push("后端");
+  if (result && result.elapsedMs > 0) {
+    const elapsed = result.elapsedMs < 1000
+      ? `${Math.round(result.elapsedMs)}ms`
+      : `${(result.elapsedMs / 1000).toFixed(1)}s`;
+    parts.push(elapsed);
+  }
+  return parts.join(" · ");
 }
 
 function cleanResultPath(path) {
@@ -208,17 +222,31 @@ class RelatedContextView extends ItemView {
     }
 
     if (section.error) {
-      sectionEl.createDiv({
+      const errorEl = sectionEl.createDiv({ cls: "kwipu-related-context__error" });
+      errorEl.createDiv({
         cls: "kwipu-related-context__status",
         text: section.error,
       });
-      return;
+      const retryButton = errorEl.createEl("button", {
+        cls: "kwipu-related-context__retry",
+        text: "重试",
+      });
+      retryButton.addEventListener("click", () => this.plugin.recomputeActiveFile(true));
+      if (!section.answer && !this.plugin.getRelatedItems(section).length) return;
     }
 
     const answerEl = sectionEl.createDiv({
       cls: "kwipu-related-context__answer markdown-rendered",
     });
     this.renderMarkdown(answerEl, section.answer || "暂时没有返回相关文件。");
+
+    const queryMeta = formatQueryMeta(section);
+    if (queryMeta) {
+      sectionEl.createDiv({
+        cls: "kwipu-related-context__query-meta",
+        text: queryMeta,
+      });
+    }
 
     if (this.plugin.getRelatedItems(section).length) {
       this.renderRelatedCards(sectionEl, section);
@@ -331,6 +359,17 @@ class RelatedContextSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("请求超时")
+      .setDesc("单次 Kwipu 查询最长等待毫秒数。")
+      .addText((text) =>
+        text.setValue(String(this.plugin.settings.requestTimeoutMs)).onChange(async (value) => {
+          this.plugin.settings.requestTimeoutMs =
+            Number(value) || DEFAULT_SETTINGS.requestTimeoutMs;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
       .setName("排除目录")
       .setDesc("用分号或逗号分隔。")
       .addText((text) =>
@@ -377,6 +416,8 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.currentRun = 0;
     this.lastEditorCursor = { filePath: "", line: 0 };
     this.inflightRelated = new Map();
+    this.activeAbortController = null;
+    this.activeRequestKey = "";
 
     this.registerView(VIEW_TYPE, (leaf) => new RelatedContextView(leaf, this));
     this.addSettingTab(new RelatedContextSettingsTab(this.app, this));
@@ -424,6 +465,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
   }
 
   onunload() {
+    if (this.activeAbortController) this.activeAbortController.abort();
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
   }
 
@@ -623,6 +665,8 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
         answer: cached.answer,
         paths: cached.paths || [],
         related: cached.related || (cached.paths || []).map((path) => ({ path })),
+        source: "cache",
+        elapsedMs: 0,
         error: "",
       };
     }
@@ -630,16 +674,18 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       return this.inflightRelated.get(requestKey);
     }
 
-    const request = this.fetchRelatedForSection(file, section, fileCache, cached).finally(() => {
+    const request = this.fetchRelatedForSection(file, section, fileCache, cached, requestKey).finally(() => {
       this.inflightRelated.delete(requestKey);
     });
     this.inflightRelated.set(requestKey, request);
     return request;
   }
 
-  async fetchRelatedForSection(file, section, fileCache, cached) {
+  async fetchRelatedForSection(file, section, fileCache, cached, requestKey) {
+    const startedAt = Date.now();
     try {
-      const response = await this.callKwipuRelated(file.path, section);
+      const response = await this.callKwipuRelated(file.path, section, requestKey);
+      const elapsedMs = Date.now() - startedAt;
       const { answer, paths, related } = normalizeRelatedResponse(response);
       this.cache.files[file.path] = fileCache;
       fileCache.sections[section.sectionId] = {
@@ -651,33 +697,58 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       };
       this.recordRelatedHits(paths);
       this.cache.indexDirty = false;
-      return { answer, paths, related, error: "" };
+      return { answer, paths, related, source: "backend", elapsedMs, error: "" };
     } catch (error) {
-      const message = `Kwipu 不可用：${error.message || error}`;
+      const message = error && error.name === "AbortError"
+        ? "Kwipu 查询已取消或超时。"
+        : `Kwipu 不可用：${error.message || error}`;
       return {
         answer: cached ? cached.answer : "",
         paths: cached ? cached.paths || [] : [],
         related: cached ? cached.related || (cached.paths || []).map((path) => ({ path })) : [],
+        source: cached ? "cache" : "",
+        elapsedMs: Date.now() - startedAt,
         error: message,
       };
     }
   }
 
-  async callKwipuRelated(filePath, section) {
+  async callKwipuRelated(filePath, section, requestKey) {
+    if (
+      this.activeAbortController &&
+      this.activeRequestKey &&
+      this.activeRequestKey !== requestKey
+    ) {
+      this.activeAbortController.abort();
+    }
+    const controller = new AbortController();
+    this.activeAbortController = controller;
+    this.activeRequestKey = requestKey;
+    const timeout = window.setTimeout(() => controller.abort(), this.settings.requestTimeoutMs);
     const response = await fetch(`${this.settings.endpoint.replace(/\/$/, "")}/related`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         filePath,
         sectionId: section.sectionId,
         sectionText: section.text,
         topK: this.settings.maxResultsPerSection,
       }),
+    }).finally(() => {
+      window.clearTimeout(timeout);
+      if (this.activeAbortController === controller) {
+        this.activeAbortController = null;
+        this.activeRequestKey = "";
+      }
     });
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || `HTTP ${response.status}`);
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw new Error(`HTTP ${response.status}`);
     }
+    if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
     return data;
   }
 
@@ -843,4 +914,5 @@ module.exports.__test = {
   cleanResultPath,
   extractPaths,
   normalizeRelatedResponse,
+  formatQueryMeta,
 };

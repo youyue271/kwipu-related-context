@@ -56,6 +56,33 @@
   line-height: 1.45;
 }
 
+.kwipu-related-context__query-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.kwipu-related-context__error {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 8px 0;
+}
+
+.kwipu-related-context__retry {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.kwipu-related-context__retry:hover {
+  background: var(--background-modifier-hover);
+}
+
 .kwipu-related-context__related {
   border-top: 1px solid var(--background-modifier-border);
   margin-top: 10px;
