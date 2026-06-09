@@ -330,6 +330,45 @@ KWIPU_EXCLUDE_DIRS=00 rag storage;.obsidian;.git;node_modules
 
 在插件设置页点击“刷新后端状态”，或重启 Obsidian。插件会读取 `/health` 并检查 storage、模型等指纹变化。
 
+## 发布策略
+
+GitHub release 推荐打包一个 zip，文件名使用：
+
+```text
+kwipu-related-context-0.1.0.zip
+```
+
+生成命令：
+
+```powershell
+cd D:\project\Kwipu\obsidian-related-context
+.\scripts\package-release.ps1
+```
+
+release zip 包含：
+
+```text
+manifest.json
+main.js
+styles.css
+README.md
+TODO.md
+package.json
+.env.example
+scripts/
+```
+
+release zip 不包含：
+
+```text
+data.json
+.env
+node_modules/
+dist/
+```
+
+目前 release 不包含 `kwipu_http_server.py` 的完整副本。后端仍以 Kwipu 主项目为准，插件仓库里的脚本只负责读取配置并启动 `KWIPU_PROJECT_DIR\kwipu_http_server.py`。
+
 ## 非目标
 
 - 不修改用户笔记。

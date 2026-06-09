@@ -65,10 +65,10 @@
   - [x] 用测试段落发起 `/related`。
   - [x] 验证返回 `answer` 和 `related`。
   - [x] 验证插件右侧栏能显示双链卡片。
-- [ ] 明确发布策略：
+- [x] 明确发布策略：
   - [x] 插件仓库是否包含后端脚本完整副本。
   - [x] 后端脚本更新时是否需要同步 Kwipu 主项目。
-  - [ ] GitHub release 是否打包 `manifest.json`、`main.js`、`styles.css`、脚本和 README。
+  - [x] GitHub release 是否打包 `manifest.json`、`main.js`、`styles.css`、脚本和 README。
 
 ## 阶段 2 - 当前文件跟踪
 

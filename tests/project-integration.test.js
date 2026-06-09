@@ -31,6 +31,7 @@ for (const script of [
   "check-kwipu-health.ps1",
   "install-plugin.ps1",
   "update-plugin.ps1",
+  "package-release.ps1",
 ]) {
   assert.ok(fs.existsSync(path.join("scripts", script)), `${script} should exist`);
 }
@@ -59,6 +60,17 @@ assertFileContains("scripts/update-plugin.ps1", [
   /install-plugin\.ps1/,
 ]);
 
+assertFileContains("scripts/package-release.ps1", [
+  /manifest\.json/,
+  /main\.js/,
+  /styles\.css/,
+  /README\.md/,
+  /scripts/,
+  /Compress-Archive/,
+  /data\.json/,
+  /\.env/,
+]);
+
 assertFileContains("README.md", [
   /完整安装流程/,
   /复制配置/,
@@ -68,6 +80,9 @@ assertFileContains("README.md", [
   /最小测试流程/,
   /\/related/,
   /sectionText/,
+  /发布策略/,
+  /package-release\.ps1/,
+  /kwipu-related-context-0\.1\.0\.zip/,
   /常见错误/,
 ]);
 
