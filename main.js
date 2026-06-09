@@ -321,6 +321,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.idleTimer = null;
     this.currentRun = 0;
     this.lastEditorCursor = { filePath: "", line: 0 };
+    this.inflightRelated = new Map();
 
     this.registerView(VIEW_TYPE, (leaf) => new RelatedContextView(leaf, this));
     this.addSettingTab(new RelatedContextSettingsTab(this.app, this));
@@ -555,6 +556,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
   async getRelatedForSection(file, section, force) {
     const fileCache = this.cache.files[file.path] || { sections: {} };
     const cached = fileCache.sections[section.sectionId];
+    const requestKey = `${file.path}|${section.sectionId}|${section.hash}|${this.settings.maxResultsPerSection}`;
     if (
       !force &&
       cached &&
@@ -568,7 +570,18 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
         error: "",
       };
     }
+    if (!force && this.inflightRelated.has(requestKey)) {
+      return this.inflightRelated.get(requestKey);
+    }
 
+    const request = this.fetchRelatedForSection(file, section, fileCache, cached).finally(() => {
+      this.inflightRelated.delete(requestKey);
+    });
+    this.inflightRelated.set(requestKey, request);
+    return request;
+  }
+
+  async fetchRelatedForSection(file, section, fileCache, cached) {
     try {
       const response = await this.callKwipuRelated(file.path, section);
       const answer = response.answer || "";
