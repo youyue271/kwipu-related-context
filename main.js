@@ -82,6 +82,35 @@ function extractPaths(answer) {
   return Array.from(new Set(Array.from(paths).map(cleanResultPath).filter(Boolean))).slice(0, 8);
 }
 
+function normalizeRelatedItem(item) {
+  if (typeof item === "string") {
+    const path = cleanResultPath(item);
+    return path ? { path, title: "", reason: "", score: null } : null;
+  }
+  if (!item || typeof item !== "object") return null;
+  const path = cleanResultPath(item.path || item.filePath || item.file || "");
+  if (!path) return null;
+  const score = typeof item.score === "number" ? item.score : null;
+  return {
+    path,
+    title: String(item.title || item.name || "").trim(),
+    reason: String(item.reason || item.explanation || item.summary || "").trim(),
+    score,
+  };
+}
+
+function normalizeRelatedResponse(response) {
+  const answer = String((response && response.answer) || "");
+  const structured = Array.isArray(response && response.related)
+    ? response.related.map(normalizeRelatedItem).filter(Boolean)
+    : [];
+  const related = structured.length
+    ? structured
+    : extractPaths(answer).map((path) => ({ path, title: "", reason: "", score: null }));
+  const paths = Array.from(new Set(related.map((item) => item.path).filter(Boolean)));
+  return { answer, related, paths };
+}
+
 function cleanResultPath(path) {
   const value = String(path || "")
     .replace(/\\/g, "/")
@@ -195,11 +224,7 @@ class RelatedContextView extends ItemView {
       const linksEl = sectionEl.createDiv({
         cls: "kwipu-related-context__related-links markdown-rendered",
       });
-      const linksMarkdown = [
-        "###### 相关笔记",
-        ...section.paths.map((path) => `- [[${this.plugin.toWikiLinkPath(path)}]]`),
-      ].join("\n");
-      this.renderMarkdown(linksEl, linksMarkdown);
+      this.renderMarkdown(linksEl, this.plugin.formatRelatedLinksMarkdown(section));
     }
   }
 
@@ -567,6 +592,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       return {
         answer: cached.answer,
         paths: cached.paths || [],
+        related: cached.related || (cached.paths || []).map((path) => ({ path })),
         error: "",
       };
     }
@@ -584,23 +610,24 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
   async fetchRelatedForSection(file, section, fileCache, cached) {
     try {
       const response = await this.callKwipuRelated(file.path, section);
-      const answer = response.answer || "";
-      const paths = extractPaths(answer);
+      const { answer, paths, related } = normalizeRelatedResponse(response);
       this.cache.files[file.path] = fileCache;
       fileCache.sections[section.sectionId] = {
         hash: section.hash,
         answer,
         paths,
+        related,
         computedAt: Date.now(),
       };
       this.recordRelatedHits(paths);
       this.cache.indexDirty = false;
-      return { answer, paths, error: "" };
+      return { answer, paths, related, error: "" };
     } catch (error) {
       const message = `Kwipu 不可用：${error.message || error}`;
       return {
         answer: cached ? cached.answer : "",
         paths: cached ? cached.paths || [] : [],
+        related: cached ? cached.related || (cached.paths || []).map((path) => ({ path })) : [],
         error: message,
       };
     }
@@ -767,4 +794,27 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       .replace(/\|/g, " ")
       .replace(/\]\]/g, "]");
   }
+
+  formatRelatedLinksMarkdown(section) {
+    const related = section.related && section.related.length
+      ? section.related
+      : (section.paths || []).map((path) => ({ path }));
+    const lines = ["###### 相关笔记"];
+    for (const item of related) {
+      const path = item.path || "";
+      const title = item.title ? String(item.title).replace(/\|/g, " ").replace(/\]\]/g, "]") : "";
+      const linkPath = this.toWikiLinkPath(path);
+      const link = title ? `[[${linkPath}|${title}]]` : `[[${linkPath}]]`;
+      lines.push(`- ${link}`);
+      if (item.reason) lines.push(`  - ${item.reason}`);
+      if (typeof item.score === "number") lines.push(`  - 相关度：${item.score.toFixed(2)}`);
+    }
+    return lines.join("\n");
+  }
+};
+
+module.exports.__test = {
+  cleanResultPath,
+  extractPaths,
+  normalizeRelatedResponse,
 };
