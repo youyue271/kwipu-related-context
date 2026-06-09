@@ -1,0 +1,13 @@
+{
+  "name": "kwipu-related-context",
+  "version": "0.1.0",
+  "description": "Obsidian plugin that asks a local Kwipu HTTP server for related context per active-note section.",
+  "main": "main.js",
+  "scripts": {
+    "check": "node --check main.js"
+  },
+  "devDependencies": {
+    "obsidian": "^1.5.0",
+    "typescript": "^5.4.0"
+  }
+}

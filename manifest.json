@@ -1,0 +1,10 @@
+{
+  "id": "kwipu-related-context",
+  "name": "Kwipu Related Context",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Show Kwipu-powered related files for each section of the active note.",
+  "author": "Kwipu",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}
