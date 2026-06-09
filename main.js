@@ -226,6 +226,21 @@ function applyBackendSignature(cache, signature) {
   return true;
 }
 
+function formatBackendStatus(status) {
+  if (!status || status.ok === false) {
+    const lines = ["状态：不可用"];
+    if (status && status.error) lines.push(`错误：${status.error}`);
+    return lines;
+  }
+  const lines = ["状态：可用"];
+  if (status.knowledgeDir) lines.push(`知识库：${status.knowledgeDir}`);
+  if (status.storageDir) lines.push(`存储：${status.storageDir}`);
+  if (status.llmModel || status.modelName) lines.push(`LLM：${status.llmModel || status.modelName}`);
+  if (status.embedModel) lines.push(`Embedding：${status.embedModel}`);
+  if (status.indexVersion) lines.push(`索引：${status.indexVersion}`);
+  return lines;
+}
+
 function cleanResultPath(path) {
   const value = String(path || "")
     .replace(/\\/g, "/")
@@ -411,6 +426,7 @@ class RelatedContextSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Kwipu 相关上下文" });
+    this.renderBackendStatus(containerEl);
 
     new Setting(containerEl)
       .setName("Kwipu HTTP 地址")
@@ -500,6 +516,24 @@ class RelatedContextSettingsTab extends PluginSettingTab {
         })
       );
   }
+
+  renderBackendStatus(containerEl) {
+    const statusEl = containerEl.createDiv({ cls: "kwipu-related-context__settings-status" });
+    statusEl.createEl("h3", { text: "后端状态" });
+    const status = this.plugin.backendStatus || { ok: false, error: "尚未刷新" };
+    for (const line of formatBackendStatus(status)) {
+      statusEl.createDiv({ text: line });
+    }
+    new Setting(statusEl)
+      .setName("刷新后端状态")
+      .setDesc("请求 /health 并更新 storage、模型和索引状态。")
+      .addButton((button) =>
+        button.setButtonText("刷新").onClick(async () => {
+          await this.plugin.refreshBackendSignature();
+          this.display();
+        })
+      );
+  }
 }
 
 module.exports = class KwipuRelatedContextPlugin extends Plugin {
@@ -519,6 +553,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.inflightRelated = new Map();
     this.activeAbortController = null;
     this.activeRequestKey = "";
+    this.backendStatus = null;
 
     this.registerView(VIEW_TYPE, (leaf) => new RelatedContextView(leaf, this));
     this.addSettingTab(new RelatedContextSettingsTab(this.app, this));
@@ -903,11 +938,12 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     try {
       const response = await fetch(`${this.settings.endpoint.replace(/\/$/, "")}/health`);
       const data = await response.json();
+      this.backendStatus = Object.assign({}, data, { ok: response.ok && data.ok });
       if (response.ok && data.ok && applyBackendSignature(this.cache, backendSignature(data))) {
         await this.saveSettings();
       }
     } catch (error) {
-      // 后端不可用时不清缓存，只让查询路径报告具体错误。
+      this.backendStatus = { ok: false, error: error.message || String(error) };
     }
   }
 
@@ -1045,6 +1081,7 @@ module.exports.__test = {
   backendSignature,
   cleanResultPath,
   extractPaths,
+  formatBackendStatus,
   normalizeRelatedResponse,
   formatQueryMeta,
   migrateCachePath,

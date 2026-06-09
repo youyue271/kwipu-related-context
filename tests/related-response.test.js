@@ -36,6 +36,7 @@ function loadPluginModule() {
 const pluginModule = loadPluginModule();
 const {
   applyBackendSignature,
+  formatBackendStatus,
   formatQueryMeta,
   migrateCachePath,
   normalizeRelatedResponse,
@@ -124,5 +125,25 @@ assert.strictEqual(applyBackendSignature(cache, "sig-a"), false);
 assert.strictEqual(cache.indexDirty, false);
 assert.strictEqual(applyBackendSignature(cache, "sig-b"), true);
 assert.strictEqual(cache.indexDirty, true);
+
+assert.deepStrictEqual(Array.from(formatBackendStatus({
+  ok: true,
+  knowledgeDir: "D:/repo",
+  storageDir: "D:/repo/00 rag storage",
+  llmModel: "qwen3.6",
+  embedModel: "bge-m3",
+  indexVersion: "v1",
+})), [
+  "状态：可用",
+  "知识库：D:/repo",
+  "存储：D:/repo/00 rag storage",
+  "LLM：qwen3.6",
+  "Embedding：bge-m3",
+  "索引：v1",
+]);
+assert.deepStrictEqual(Array.from(formatBackendStatus({ ok: false, error: "boom" })), [
+  "状态：不可用",
+  "错误：boom",
+]);
 
 console.log("related response tests passed");
