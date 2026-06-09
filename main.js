@@ -186,21 +186,21 @@ class RelatedContextView extends ItemView {
       return;
     }
 
-    if (section.paths && section.paths.length) {
-      const pathsEl = sectionEl.createDiv({ cls: "kwipu-related-context__paths" });
-      for (const path of section.paths) {
-        const button = pathsEl.createEl("button", {
-          cls: "kwipu-related-context__path",
-          text: path,
-        });
-        button.addEventListener("click", () => this.plugin.openPath(path));
-      }
-    }
-
     const answerEl = sectionEl.createDiv({
       cls: "kwipu-related-context__answer markdown-rendered",
     });
     this.renderMarkdown(answerEl, section.answer || "No related files returned yet.");
+
+    if (section.paths && section.paths.length) {
+      const linksEl = sectionEl.createDiv({
+        cls: "kwipu-related-context__related-links markdown-rendered",
+      });
+      const linksMarkdown = [
+        "###### Related notes",
+        ...section.paths.map((path) => `- [[${this.plugin.toWikiLinkPath(path)}]]`),
+      ].join("\n");
+      this.renderMarkdown(linksEl, linksMarkdown);
+    }
   }
 
   renderMarkdown(container, markdown) {
@@ -320,6 +320,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.activeTimer = null;
     this.idleTimer = null;
     this.currentRun = 0;
+    this.lastEditorCursor = { filePath: "", line: 0 };
 
     this.registerView(VIEW_TYPE, (leaf) => new RelatedContextView(leaf, this));
     this.addSettingTab(new RelatedContextSettingsTab(this.app, this));
@@ -352,13 +353,10 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       this.app.workspace.on("active-file-change", () => this.scheduleActiveFileUpdate(false))
     );
     this.registerEvent(
-      this.app.workspace.on("active-leaf-change", () => this.scheduleActiveFileUpdate(false))
-    );
-    this.registerEvent(
       this.app.workspace.on("editor-change", () => this.scheduleActiveFileUpdate(false))
     );
     this.registerDomEvent(document, "selectionchange", () => {
-      this.scheduleActiveFileUpdate(false);
+      if (this.isMarkdownEditorFocused()) this.scheduleActiveFileUpdate(false);
     });
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
@@ -435,7 +433,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
 
     const text = await this.app.vault.cachedRead(file);
     const sections = this.splitSections(file.path, text);
-    const cursorLine = this.getActiveCursorLine();
+    const cursorLine = this.getActiveCursorLine(file.path);
     const currentSection = this.findSectionForLine(sections, cursorLine);
     if (runId !== this.currentRun) return;
 
@@ -462,13 +460,29 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.scheduleIdlePrecompute();
   }
 
-  getActiveCursorLine() {
+  getActiveCursorLine(filePath) {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     try {
-      return view && view.editor ? view.editor.getCursor().line : 0;
-    } catch (error) {
+      if (view && view.editor && view.file && view.file.path === filePath) {
+        const line = view.editor.getCursor().line;
+        this.lastEditorCursor = { filePath, line };
+        return line;
+      }
+      if (this.lastEditorCursor.filePath === filePath) return this.lastEditorCursor.line;
       return 0;
+    } catch (error) {
+      return this.lastEditorCursor.filePath === filePath ? this.lastEditorCursor.line : 0;
     }
+  }
+
+  isMarkdownEditorFocused() {
+    const activeElement = document.activeElement;
+    if (!activeElement || !activeElement.closest) return false;
+    if (!activeElement.closest(".markdown-source-view, .markdown-preview-view, .cm-editor")) {
+      return false;
+    }
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    return Boolean(view && view.editor);
   }
 
   findSectionForLine(sections, line) {
@@ -730,5 +744,14 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       }
     }
     return { file: null, normalized, candidates: Array.from(candidates) };
+  }
+
+  toWikiLinkPath(path) {
+    const resolution = this.resolveMarkdownPath(path);
+    const filePath = resolution.file instanceof TFile ? resolution.file.path : resolution.normalized;
+    return String(filePath || "")
+      .replace(/\.md$/i, "")
+      .replace(/\|/g, " ")
+      .replace(/\]\]/g, "]");
   }
 };

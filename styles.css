@@ -54,28 +54,25 @@
 .kwipu-related-context__answer {
   font-size: 12px;
   line-height: 1.45;
-  white-space: pre-wrap;
 }
 
-.kwipu-related-context__paths {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 6px 0 8px;
-}
-
-.kwipu-related-context__path {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  color: var(--text-accent);
-  cursor: pointer;
+.kwipu-related-context__related-links {
+  border-top: 1px solid var(--background-modifier-border);
   font-size: 12px;
-  padding: 4px 6px;
-  text-align: left;
+  margin-top: 10px;
+  padding-top: 8px;
 }
 
-.kwipu-related-context__path:hover {
-  background: var(--background-modifier-hover);
+.kwipu-related-context__related-links h6 {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.kwipu-related-context__related-links ul {
+  margin: 0;
+  padding-inline-start: 18px;
 }
 
 .kwipu-related-context__empty {
