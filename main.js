@@ -220,11 +220,41 @@ class RelatedContextView extends ItemView {
     });
     this.renderMarkdown(answerEl, section.answer || "暂时没有返回相关文件。");
 
-    if (section.paths && section.paths.length) {
-      const linksEl = sectionEl.createDiv({
-        cls: "kwipu-related-context__related-links markdown-rendered",
+    if (this.plugin.getRelatedItems(section).length) {
+      this.renderRelatedCards(sectionEl, section);
+    }
+  }
+
+  renderRelatedCards(container, section) {
+    const groupEl = container.createDiv({ cls: "kwipu-related-context__related" });
+    groupEl.createDiv({
+      cls: "kwipu-related-context__related-heading",
+      text: "相关笔记",
+    });
+
+    for (const item of this.plugin.getRelatedItems(section)) {
+      const cardEl = groupEl.createDiv({ cls: "kwipu-related-context__related-card" });
+      const titleEl = cardEl.createDiv({
+        cls: "kwipu-related-context__related-title markdown-rendered",
       });
-      this.renderMarkdown(linksEl, this.plugin.formatRelatedLinksMarkdown(section));
+      this.renderMarkdown(titleEl, this.plugin.formatRelatedLinkMarkdown(item));
+
+      if (item.reason) {
+        cardEl.createDiv({
+          cls: "kwipu-related-context__related-reason",
+          text: item.reason,
+        });
+      }
+
+      const meta = [];
+      if (typeof item.score === "number") meta.push(`相关度 ${item.score.toFixed(2)}`);
+      if (item.path) meta.push(item.path);
+      if (meta.length) {
+        cardEl.createDiv({
+          cls: "kwipu-related-context__related-meta",
+          text: meta.join(" · "),
+        });
+      }
     }
   }
 
@@ -795,21 +825,17 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       .replace(/\]\]/g, "]");
   }
 
-  formatRelatedLinksMarkdown(section) {
+  getRelatedItems(section) {
     const related = section.related && section.related.length
       ? section.related
       : (section.paths || []).map((path) => ({ path }));
-    const lines = ["###### 相关笔记"];
-    for (const item of related) {
-      const path = item.path || "";
-      const title = item.title ? String(item.title).replace(/\|/g, " ").replace(/\]\]/g, "]") : "";
-      const linkPath = this.toWikiLinkPath(path);
-      const link = title ? `[[${linkPath}|${title}]]` : `[[${linkPath}]]`;
-      lines.push(`- ${link}`);
-      if (item.reason) lines.push(`  - ${item.reason}`);
-      if (typeof item.score === "number") lines.push(`  - 相关度：${item.score.toFixed(2)}`);
-    }
-    return lines.join("\n");
+    return related.filter((item) => item && item.path);
+  }
+
+  formatRelatedLinkMarkdown(item) {
+    const title = item.title ? String(item.title).replace(/\|/g, " ").replace(/\]\]/g, "]") : "";
+    const linkPath = this.toWikiLinkPath(item.path || "");
+    return title ? `[[${linkPath}|${title}]]` : `[[${linkPath}]]`;
   }
 };
 

@@ -11,6 +11,7 @@
 
 - [x] 后端 `/related` 返回第一版结构化结果，插件优先使用 `related` 字段。
 - [x] 后端让模型优先输出严格 JSON，并在服务端解析为 `answer`、`related`。
+- [ ] 把 Kwipu 侧插件依赖脚本纳入本仓库，形成从安装到启动到使用的完整流程。
 - [ ] 后端去掉对回答文本解析路径的兜底依赖，只保留严格结构化协议。
 - [ ] 右侧栏结果改成更清晰的分条卡片：双链、中文原因、分数或来源、缓存/耗时状态。
 - [ ] 添加请求超时、取消和重试状态，显示后端耗时、缓存命中、查询失败原因。
@@ -33,6 +34,41 @@
   - [x] 打开 Kwipu 相关上下文
   - [x] 重新计算当前段落的 Kwipu 相关上下文
   - [x] 清空 Kwipu 相关上下文缓存
+
+## 阶段 1.5 - 项目整合与安装流程
+
+- [ ] 在本仓库加入 `kwipu_http_server.py` 或等价后端入口。
+- [ ] 明确后端入口和 Kwipu 主项目脚本之间的关系，避免复制后版本漂移。
+- [ ] 增加 `scripts/` 目录：
+  - [ ] Windows 启动脚本：设置环境变量并启动 HTTP server。
+  - [ ] Windows 健康检查脚本：检查 `/health`、Ollama、storage 路径。
+  - [ ] 安装脚本：把插件文件复制到指定 vault 的 `.obsidian/plugins/kwipu-related-context`。
+  - [ ] 更新脚本：覆盖插件文件但保留 `data.json`。
+- [ ] 增加 `.env.example`：
+  - [ ] `KWIPU_KNOWLEDGE_DIR`
+  - [ ] `KWIPU_STORAGE_DIR`
+  - [ ] `KWIPU_LLM_MODEL`
+  - [ ] `KWIPU_EMBED_MODEL`
+  - [ ] `KWIPU_EXCLUDE_DIRS`
+  - [ ] `KWIPU_EXCLUDE_DIR_PREFIXES`
+  - [ ] `KWIPU_HTTP_PORT`
+- [ ] README 增加完整流程：
+  - [ ] 准备 Ollama 模型。
+  - [ ] 配置 vault 路径和 storage 路径。
+  - [ ] 首次建库。
+  - [ ] 启动 HTTP server。
+  - [ ] 安装或更新 Obsidian 插件。
+  - [ ] Obsidian 中启用插件并打开右侧栏。
+  - [ ] 常见错误排查：502、400、10053、模型上下文不足、storage 路径错误。
+- [ ] 增加最小测试流程：
+  - [ ] 用测试 vault 发起 `/health`。
+  - [ ] 用测试段落发起 `/related`。
+  - [ ] 验证返回 `answer` 和 `related`。
+  - [ ] 验证插件右侧栏能显示双链卡片。
+- [ ] 明确发布策略：
+  - [ ] 插件仓库是否包含后端脚本完整副本。
+  - [ ] 后端脚本更新时是否需要同步 Kwipu 主项目。
+  - [ ] GitHub release 是否打包 `manifest.json`、`main.js`、`styles.css`、脚本和 README。
 
 ## 阶段 2 - 当前文件跟踪
 
