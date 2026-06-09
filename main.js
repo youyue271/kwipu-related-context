@@ -86,7 +86,7 @@ function extractPaths(answer) {
 function normalizeRelatedItem(item) {
   if (typeof item === "string") {
     const path = cleanResultPath(item);
-    return path ? { path, title: "", reason: "", score: null } : null;
+    return path ? { path, title: "", reason: "", score: null, source: "" } : null;
   }
   if (!item || typeof item !== "object") return null;
   const path = cleanResultPath(item.path || item.filePath || item.file || "");
@@ -97,6 +97,7 @@ function normalizeRelatedItem(item) {
     title: String(item.title || item.name || "").trim(),
     reason: String(item.reason || item.explanation || item.summary || "").trim(),
     score,
+    source: String(item.source || item.sourceType || item.retriever || "").trim(),
   };
 }
 
@@ -107,9 +108,17 @@ function normalizeRelatedResponse(response) {
     : [];
   const related = structured.length
     ? structured
-    : extractPaths(answer).map((path) => ({ path, title: "", reason: "", score: null }));
+    : extractPaths(answer).map((path) => ({ path, title: "", reason: "", score: null, source: "" }));
   const paths = Array.from(new Set(related.map((item) => item.path).filter(Boolean)));
   return { answer, related, paths };
+}
+
+function formatRelatedMeta(item) {
+  const meta = [];
+  if (item && typeof item.score === "number") meta.push(`相关度 ${item.score.toFixed(2)}`);
+  if (item && item.source) meta.push(`来源：${item.source}`);
+  if (item && item.path) meta.push(item.path);
+  return meta.join(" · ");
 }
 
 function formatQueryMeta(result) {
@@ -390,13 +399,11 @@ class RelatedContextView extends ItemView {
         });
       }
 
-      const meta = [];
-      if (typeof item.score === "number") meta.push(`相关度 ${item.score.toFixed(2)}`);
-      if (item.path) meta.push(item.path);
-      if (meta.length) {
+      const meta = formatRelatedMeta(item);
+      if (meta) {
         cardEl.createDiv({
           cls: "kwipu-related-context__related-meta",
-          text: meta.join(" · "),
+          text: meta,
         });
       }
     }
@@ -1082,6 +1089,7 @@ module.exports.__test = {
   cleanResultPath,
   extractPaths,
   formatBackendStatus,
+  formatRelatedMeta,
   normalizeRelatedResponse,
   formatQueryMeta,
   migrateCachePath,

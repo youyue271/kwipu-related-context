@@ -38,6 +38,7 @@ const {
   applyBackendSignature,
   formatBackendStatus,
   formatQueryMeta,
+  formatRelatedMeta,
   migrateCachePath,
   normalizeRelatedResponse,
   removeCachePath,
@@ -53,6 +54,7 @@ const structured = normalizeRelatedResponse({
       title: "犯罪构成",
       reason: "与当前段落都讨论构成要件。",
       score: 0.91,
+      source: "vector",
     },
     {
       path: "Law/责任",
@@ -69,6 +71,13 @@ assert.strictEqual(structured.related.length, 2);
 assert.strictEqual(structured.related[0].title, "犯罪构成");
 assert.strictEqual(structured.related[0].reason, "与当前段落都讨论构成要件。");
 assert.strictEqual(structured.related[0].score, 0.91);
+assert.strictEqual(structured.related[0].source, "vector");
+
+assert.strictEqual(formatRelatedMeta({
+  path: "03 collection/Law/犯罪构成.md",
+  score: 0.91,
+  source: "vector",
+}), "相关度 0.91 · 来源：vector · 03 collection/Law/犯罪构成.md");
 
 const fallback = normalizeRelatedResponse({
   answer: "- [犯罪构成](03%20collection/Law/犯罪构成.md)\n- [[Law/责任]]",
