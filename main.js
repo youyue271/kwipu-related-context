@@ -130,6 +130,207 @@ function applyRelatedPreferences(items, cache) {
     .sort((a, b) => Number(b.pinned) - Number(a.pinned));
 }
 
+function normalizeLinkTarget(path) {
+  return cleanResultPath(path)
+    .replace(/\.md$/i, "")
+    .replace(/#.*$/, "")
+    .trim();
+}
+
+function noteKey(path) {
+  return normalizeLinkTarget(path).toLowerCase();
+}
+
+function extractMarkdownLinks(text) {
+  return extractPaths(text).map(normalizeLinkTarget).filter(Boolean);
+}
+
+function extractMarkdownTags(text) {
+  const tags = new Set();
+  const pattern = /(^|\s)#([\p{L}\p{N}_/-]+)/gu;
+  let match;
+  while ((match = pattern.exec(String(text || ""))) !== null) {
+    tags.add(match[2]);
+  }
+  return Array.from(tags).sort();
+}
+
+function extractMarkdownHeadings(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.match(/^#{1,6}\s+(.+)$/))
+    .filter(Boolean)
+    .map((match) => match[1].trim());
+}
+
+function keywordTokens(text) {
+  const tokens = new Set();
+  const cleaned = String(text || "")
+    .replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g, " $1 ")
+    .replace(/[#*_`>()[\]{}.,;:!?，。；：！？、]/g, " ");
+  const pattern = /[\p{L}\p{N}]{2,}/gu;
+  let match;
+  while ((match = pattern.exec(cleaned)) !== null) {
+    tokens.add(match[0].toLowerCase());
+  }
+  return Array.from(tokens).sort();
+}
+
+function folderSimilarity(leftPath, rightPath) {
+  const left = String(leftPath || "").split("/").slice(0, -1);
+  const right = String(rightPath || "").split("/").slice(0, -1);
+  let shared = 0;
+  for (let i = 0; i < Math.min(left.length, right.length); i += 1) {
+    if (left[i] !== right[i]) break;
+    shared += 1;
+  }
+  return shared;
+}
+
+function buildLocalMetadataIndex(files) {
+  const index = {};
+  for (const file of files || []) {
+    if (!file || !file.path) continue;
+    const text = String(file.text || "");
+    const headings = extractMarkdownHeadings(text);
+    index[file.path] = {
+      path: file.path,
+      title: headings[0] || file.path.split("/").pop().replace(/\.md$/i, ""),
+      headings,
+      links: extractMarkdownLinks(text),
+      tags: extractMarkdownTags(text),
+      keywords: keywordTokens(text),
+    };
+    index[file.path].metadataHash = hashString(JSON.stringify({
+      headings: index[file.path].headings,
+      links: index[file.path].links,
+      tags: index[file.path].tags,
+      keywords: index[file.path].keywords,
+    }));
+  }
+  return index;
+}
+
+function scoreLocalCandidates(index, currentPath, sectionText, topK) {
+  const current = index[currentPath] || { links: [], tags: [], keywords: [] };
+  const sectionLinks = new Set(extractMarkdownLinks(sectionText).map(noteKey));
+  const sectionTags = new Set(extractMarkdownTags(sectionText));
+  const sectionKeywords = new Set(keywordTokens(sectionText));
+  const currentKey = noteKey(currentPath);
+  const results = [];
+
+  for (const item of Object.values(index || {})) {
+    if (!item || item.path === currentPath) continue;
+    const itemKey = noteKey(item.path);
+    let score = 0;
+    const reasons = [];
+
+    if (sectionLinks.has(itemKey) || (current.links || []).map(noteKey).includes(itemKey)) {
+      score += 5;
+      reasons.push("直接链接");
+    }
+    if ((item.links || []).map(noteKey).includes(currentKey)) {
+      score += 4;
+      reasons.push("反链");
+    }
+    const sharedTags = (item.tags || []).filter((tag) => sectionTags.has(tag) || (current.tags || []).includes(tag));
+    if (sharedTags.length) {
+      score += sharedTags.length * 2;
+      reasons.push(`共享标签 ${sharedTags.slice(0, 3).join("、")}`);
+    }
+    const headingText = [item.title].concat(item.headings || []).join(" ").toLowerCase();
+    const headingHits = Array.from(sectionKeywords).filter((token) => headingText.includes(token));
+    if (headingHits.length) {
+      score += Math.min(3, headingHits.length);
+      reasons.push("标题重合");
+    }
+    const sharedKeywords = (item.keywords || []).filter((token) => sectionKeywords.has(token));
+    if (sharedKeywords.length) {
+      score += Math.min(4, sharedKeywords.length);
+      reasons.push("关键词重合");
+    }
+    const folderScore = folderSimilarity(currentPath, item.path);
+    if (folderScore) {
+      score += Math.min(2, folderScore * 0.5);
+      reasons.push("文件夹相近");
+    }
+    if (score <= 0) continue;
+    results.push({
+      path: item.path,
+      title: item.title,
+      reason: reasons.join("；"),
+      score,
+      source: "local-metadata",
+    });
+  }
+
+  return results
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK || 5);
+}
+
+function mergeRelatedItems(primaryItems, localItems, topK) {
+  const merged = [];
+  const byKey = new Map();
+
+  const add = (item, localOnly) => {
+    if (!item || !item.path) return;
+    const key = noteKey(item.path);
+    const existing = byKey.get(key);
+    if (!existing) {
+      const copy = Object.assign({}, item);
+      if (localOnly && typeof copy.score === "number") copy.score = Number((copy.score / 10).toFixed(2));
+      byKey.set(key, copy);
+      merged.push(copy);
+      return;
+    }
+    if (!existing.title && item.title) existing.title = item.title;
+    if (!existing.reason && item.reason) existing.reason = item.reason;
+    else if (item.reason && !existing.reason.includes(item.reason)) {
+      existing.reason = `${existing.reason}；${item.reason}`;
+    }
+    if (typeof item.score === "number") {
+      existing.score = typeof existing.score === "number"
+        ? Math.max(existing.score, localOnly ? item.score / 10 : item.score)
+        : (localOnly ? item.score / 10 : item.score);
+    }
+    if (item.source && !String(existing.source || "").includes(item.source)) {
+      existing.source = [existing.source, item.source].filter(Boolean).join("+");
+    }
+  };
+
+  for (const item of primaryItems || []) add(item, false);
+  for (const item of localItems || []) add(item, true);
+  return merged.slice(0, topK || 5);
+}
+
+function setLocalMetadataForFile(cache, path, text) {
+  if (!cache || !path) return false;
+  cache.localMetadataIndex = cache.localMetadataIndex || {};
+  const item = buildLocalMetadataIndex([{ path, text }])[path];
+  if (!item) return false;
+  const previous = cache.localMetadataIndex[path];
+  if (previous && previous.metadataHash === item.metadataHash) return false;
+  cache.localMetadataIndex[path] = item;
+  cache.indexDirty = true;
+  return true;
+}
+
+function rankIdleCandidatePaths(stats, localCandidates, limit) {
+  const scores = new Map();
+  for (const [path, stat] of Object.entries(stats || {})) {
+    scores.set(path, (stat.openCount || 0) * 2 + (stat.relatedHitCount || 0));
+  }
+  for (const item of localCandidates || []) {
+    if (!item || !item.path) continue;
+    scores.set(item.path, (scores.get(item.path) || 0) + 20 + (item.score || 0));
+  }
+  return Array.from(scores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit || 3)
+    .map(([path]) => path);
+}
+
 function formatQueryMeta(result) {
   const parts = [];
   if (result && result.source === "cache") parts.push("缓存");
@@ -154,6 +355,10 @@ function removeCachePath(cache, path) {
     delete cache.stats[path];
     changed = true;
   }
+  if (cache.localMetadataIndex && cache.localMetadataIndex[path]) {
+    delete cache.localMetadataIndex[path];
+    changed = true;
+  }
   if (removeRelatedReferences(cache, path)) changed = true;
   if (changed) cache.indexDirty = true;
   return changed;
@@ -172,6 +377,11 @@ function migrateCachePath(cache, oldPath, newPath) {
   if (cache.stats[oldPath]) {
     cache.stats[newPath] = cache.stats[oldPath];
     delete cache.stats[oldPath];
+    changed = true;
+  }
+  if (cache.localMetadataIndex && cache.localMetadataIndex[oldPath]) {
+    cache.localMetadataIndex[newPath] = Object.assign({}, cache.localMetadataIndex[oldPath], { path: newPath });
+    delete cache.localMetadataIndex[oldPath];
     changed = true;
   }
   if (migrateRelatedReferences(cache, oldPath, newPath)) changed = true;
@@ -575,6 +785,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.cache = this.settings.cache || this.createEmptyCache();
     this.cache.pinnedRelated = this.cache.pinnedRelated || {};
     this.cache.ignoredRelated = this.cache.ignoredRelated || {};
+    this.cache.localMetadataIndex = this.cache.localMetadataIndex || {};
     this.state = {
       status: "空闲",
       filePath: "",
@@ -664,6 +875,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       stats: {},
       pinnedRelated: {},
       ignoredRelated: {},
+      localMetadataIndex: {},
       indexDirty: false,
     };
   }
@@ -720,6 +932,7 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     this.renderViews();
 
     const text = await this.app.vault.cachedRead(file);
+    this.updateLocalMetadataForFile(file, text);
     const sections = this.splitSections(file.path, text);
     const cursorLine = this.getActiveCursorLine(file.path);
     const currentSection = this.findSectionForLine(sections, cursorLine);
@@ -877,17 +1090,26 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
       const response = await this.callKwipuRelated(file.path, section, requestKey);
       const elapsedMs = Date.now() - startedAt;
       const { answer, paths, related } = normalizeRelatedResponse(response);
+      const localRelated = scoreLocalCandidates(
+        this.cache.localMetadataIndex || {},
+        file.path,
+        section.text,
+        this.settings.maxResultsPerSection
+      );
+      const mergedRelated = mergeRelatedItems(related, localRelated, this.settings.maxResultsPerSection);
+      const mergedPaths = Array.from(new Set(mergedRelated.map((item) => item.path).filter(Boolean)));
       this.cache.files[file.path] = fileCache;
       fileCache.sections[section.sectionId] = {
         hash: section.hash,
         answer,
-        paths,
-        related,
+        paths: mergedPaths,
+        related: mergedRelated,
         computedAt: Date.now(),
       };
-      this.recordRelatedHits(paths);
+      this.recordComputed(file.path);
+      this.recordRelatedHits(mergedPaths);
       this.cache.indexDirty = false;
-      return { answer, paths, related, source: "backend", elapsedMs, error: "" };
+      return { answer, paths: mergedPaths, related: mergedRelated, source: "backend", elapsedMs, error: "" };
     } catch (error) {
       const message = error && error.name === "AbortError"
         ? "Kwipu 查询已取消或超时。"
@@ -966,6 +1188,17 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
     }
   }
 
+  recordComputed(path) {
+    const stats = this.cache.stats[path] || {};
+    stats.lastComputedAt = Date.now();
+    this.cache.stats[path] = stats;
+  }
+
+  updateLocalMetadataForFile(file, text) {
+    if (!this.isIncludedMarkdown(file)) return false;
+    return setLocalMetadataForFile(this.cache, file.path, text);
+  }
+
   markIndexDirty() {
     this.cache.indexDirty = true;
     this.scheduleIdlePrecompute();
@@ -991,21 +1224,25 @@ module.exports = class KwipuRelatedContextPlugin extends Plugin {
   }
 
   async runIdlePrecompute() {
-    const candidates = Object.entries(this.cache.stats)
-      .sort((a, b) => {
-        const scoreA = (a[1].openCount || 0) * 2 + (a[1].relatedHitCount || 0);
-        const scoreB = (b[1].openCount || 0) * 2 + (b[1].relatedHitCount || 0);
-        return scoreB - scoreA;
-      })
-      .slice(0, 3)
-      .map(([path]) => path);
-
     const active = this.app.workspace.getActiveFile();
+    let localCandidates = [];
+    if (this.isIncludedMarkdown(active)) {
+      const activeStateText = this.state.section ? this.state.section.text : "";
+      localCandidates = scoreLocalCandidates(
+        this.cache.localMetadataIndex || {},
+        active.path,
+        activeStateText,
+        8
+      );
+    }
+    const candidates = rankIdleCandidatePaths(this.cache.stats, localCandidates, 3);
+
     for (const path of candidates) {
       if (active && active.path === path) continue;
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!this.isIncludedMarkdown(file)) continue;
       const text = await this.app.vault.cachedRead(file);
+      this.updateLocalMetadataForFile(file, text);
       const sections = this.splitSections(file.path, text).slice(0, 2);
       for (const section of sections) {
         await this.getRelatedForSection(file, section, false);
@@ -1144,12 +1381,17 @@ module.exports.__test = {
   applyBackendSignature,
   applyRelatedPreferences,
   backendSignature,
+  buildLocalMetadataIndex,
   cleanResultPath,
   extractPaths,
   formatBackendStatus,
   formatRelatedMeta,
+  mergeRelatedItems,
   normalizeRelatedResponse,
   formatQueryMeta,
   migrateCachePath,
+  rankIdleCandidatePaths,
   removeCachePath,
+  scoreLocalCandidates,
+  setLocalMetadataForFile,
 };

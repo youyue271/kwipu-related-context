@@ -37,9 +37,14 @@ const pluginModule = loadPluginModule();
 const {
   applyBackendSignature,
   applyRelatedPreferences,
+  buildLocalMetadataIndex,
   formatBackendStatus,
   formatQueryMeta,
   formatRelatedMeta,
+  mergeRelatedItems,
+  rankIdleCandidatePaths,
+  scoreLocalCandidates,
+  setLocalMetadataForFile,
   migrateCachePath,
   normalizeRelatedResponse,
   removeCachePath,
@@ -91,6 +96,80 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(applyRelatedPreferences([
   { path: "a.md", title: "A", pinned: true },
   { path: "b.md", title: "B", pinned: false },
 ]);
+
+const metadataIndex = buildLocalMetadataIndex([
+  {
+    path: "Law/刑法/当前.md",
+    text: "# 犯罪构成\n\n#刑法 [[Law/刑法/责任]] 犯罪 构成 责任",
+  },
+  {
+    path: "Law/刑法/责任.md",
+    text: "# 责任\n\n#刑法 [[Law/刑法/当前]] 犯罪 责任 判断",
+  },
+  {
+    path: "Project/API.md",
+    text: "# API\n\n#项目 接口 文档",
+  },
+  {
+    path: "Law/刑法/概念.md",
+    text: "# 刑法概念\n\n#刑法 犯罪 基础 概念",
+  },
+]);
+
+assert.deepStrictEqual(JSON.parse(JSON.stringify(metadataIndex["Law/刑法/当前.md"].links)), ["Law/刑法/责任"]);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(metadataIndex["Law/刑法/当前.md"].tags)), ["刑法"]);
+assert.ok(metadataIndex["Law/刑法/当前.md"].keywords.includes("犯罪"));
+
+const localCandidates = scoreLocalCandidates(
+  metadataIndex,
+  "Law/刑法/当前.md",
+  "犯罪构成与责任判断 #刑法 [[Law/刑法/责任]]",
+  3
+);
+assert.strictEqual(localCandidates[0].path, "Law/刑法/责任.md");
+assert.ok(localCandidates[0].score > localCandidates[1].score);
+assert.ok(localCandidates[0].reason.includes("直接链接"));
+assert.ok(localCandidates[0].reason.includes("反链"));
+assert.ok(localCandidates[0].source.includes("local-metadata"));
+
+const mergedRelated = mergeRelatedItems(
+  [{ path: "Law/刑法/责任.md", score: 0.9, source: "vector" }],
+  localCandidates,
+  3
+);
+assert.strictEqual(mergedRelated[0].path, "Law/刑法/责任.md");
+assert.ok(mergedRelated[0].source.includes("vector"));
+assert.ok(mergedRelated[0].source.includes("local-metadata"));
+assert.strictEqual(new Set(mergedRelated.map((item) => item.path)).size, mergedRelated.length);
+
+const cacheWithMetadata = { files: {}, stats: {}, localMetadataIndex: {}, indexDirty: false };
+assert.strictEqual(setLocalMetadataForFile(cacheWithMetadata, "Law/刑法/当前.md", "# 当前\n\n#刑法 [[Law/刑法/责任]] 犯罪"), true);
+assert.strictEqual(cacheWithMetadata.localMetadataIndex["Law/刑法/当前.md"].title, "当前");
+assert.strictEqual(cacheWithMetadata.indexDirty, true);
+
+cacheWithMetadata.indexDirty = false;
+assert.strictEqual(setLocalMetadataForFile(cacheWithMetadata, "Law/刑法/当前.md", "# 当前\n\n#刑法 [[Law/刑法/责任]] 犯罪"), false);
+assert.strictEqual(cacheWithMetadata.indexDirty, false);
+
+cacheWithMetadata.indexDirty = false;
+migrateCachePath(cacheWithMetadata, "Law/刑法/当前.md", "Law/刑法/新当前.md");
+assert.strictEqual(cacheWithMetadata.localMetadataIndex["Law/刑法/当前.md"], undefined);
+assert.strictEqual(cacheWithMetadata.localMetadataIndex["Law/刑法/新当前.md"].path, "Law/刑法/新当前.md");
+assert.strictEqual(cacheWithMetadata.indexDirty, true);
+
+cacheWithMetadata.indexDirty = false;
+removeCachePath(cacheWithMetadata, "Law/刑法/新当前.md");
+assert.strictEqual(cacheWithMetadata.localMetadataIndex["Law/刑法/新当前.md"], undefined);
+assert.strictEqual(cacheWithMetadata.indexDirty, true);
+
+assert.deepStrictEqual(JSON.parse(JSON.stringify(rankIdleCandidatePaths(
+  {
+    "Project/API.md": { openCount: 5 },
+    "Law/刑法/概念.md": { relatedHitCount: 1 },
+  },
+  localCandidates,
+  2
+))), ["Law/刑法/责任.md", "Law/刑法/概念.md"]);
 
 const fallback = normalizeRelatedResponse({
   answer: "- [犯罪构成](03%20collection/Law/犯罪构成.md)\n- [[Law/责任]]",
